@@ -12,3 +12,4 @@ pm4py==2.7.23.11
 Jinja2==3.1.6
 python-multipart==0.0.32
 python-dotenv==1.2.4
+tzdata==2026.5

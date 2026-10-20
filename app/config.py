@@ -9,9 +9,10 @@ from __future__ import annotations
 import secrets
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     # it because the container port is published on 127.0.0.1 only).
     allow_non_loopback_bind: bool = False
     # Host headers accepted (protects against DNS-rebinding).
-    allowed_hosts: list[str] = Field(default_factory=lambda: ["127.0.0.1", "localhost", "[::1]"])
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["127.0.0.1", "localhost"])
 
     # --- Storage ---------------------------------------------------------
     data_dir: Path = PROJECT_ROOT / "data"

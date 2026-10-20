@@ -1,0 +1,18 @@
+event_id,case_id,activity,timestamp,start_timestamp,resource,department,cost,case_status
+V001,000123,Create Purchase Requisition,2024-10-21 09:00:00,,ops.miller,Operations,12.00,Open
+V002,000123,Approve Purchase Requisition,2024-10-21 11:30:00,2024-10-21 11:20:00,mgr.ops,Operations,8.00,Open
+V003,,Create Purchase Order,2024-10-22 10:00:00,,buyer.ahmed,Procurement,20.00,Open
+V004,000124,,2024-10-22 10:05:00,,buyer.becker,Procurement,20.00,Open
+V005,000124,Create Purchase Order,22/10/2024 10:05,,buyer.becker,Procurement,20.00,Open
+V006,000124,Approve Purchase Order,not a date,,lead.procurement1,Procurement,10.00,Open
+V007,000125,Create Purchase Requisition,2024-10-23 08:15:00,,it.okafor,IT,"12,50 EUR",Open
+V007,000125,Approve Purchase Requisition,2024-10-23 09:15:00,,mgr.it,IT,8.00,Open
+V009,000125,Create Purchase Order,2024-10-23 12:00:00,2024-10-23 13:00:00,buyer.costa,Procurement,20.00,Open
+V010,000126,Create Purchase Requisition,2024-10-27 02:30:00,,fac.nguyen,Facilities,12.00,Open
+V011,000126,Approve Purchase Requisition,2024-03-31 02:30:00,,mgr.fac,Facilities,8.00,Open
+V012,000127,"=HYPERLINK(""http://example.invalid"",""click"")",2024-10-24 10:00:00,,mkt.dubois,Marketing,1.00,Open
+V013,000127,Create Purchase Order,2024-10-24 10:00:00,,buyer.dahl,Procurement,abc,Open
+V014,000128,Create Purchase Requisition,2024-10-25T08:00:00Z,,ops.ito,Operations,12.00,Completed
+V015,000128,Approve Purchase Requisition,2024-10-25T10:00:00+02:00,,mgr.ops,Operations,-8.00,Completed
+V016,000128,Approve Purchase Requisition,2024-10-25 12:00:00,,mgr.ops,Operations,,Completed
+V017,000129,Create Purchase Requisition,2024-10-26 09:00:00
