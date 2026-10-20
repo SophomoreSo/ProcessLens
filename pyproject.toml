@@ -1,0 +1,15 @@
+[project]
+name = "processlens"
+version = "0.1.0"
+description = "Local-first process-mining and process-analysis workbench"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # Starlette 1.x suggests the httpx2 package for TestClient; httpx works and is pinned.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+    "ignore::DeprecationWarning:pm4py.*",
+    "ignore:Install the optional requirement `r4pm`:UserWarning",
+]
