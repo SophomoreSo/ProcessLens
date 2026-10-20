@@ -67,6 +67,12 @@ class Settings(BaseSettings):
             return [h.strip() for h in v.split(",") if h.strip()]
         return v
 
+    @field_validator("secret_key", mode="before")
+    @classmethod
+    def _secret(cls, v):
+        # An empty value (e.g. "PROCESSLENS_SECRET_KEY=" in .env) must not yield a predictable key.
+        return v if isinstance(v, str) and v.strip() else secrets.token_urlsafe(32)
+
     @property
     def resolved_database_url(self) -> str:
         if self.database_url:
