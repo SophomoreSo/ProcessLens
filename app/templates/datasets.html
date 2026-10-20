@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Datasets</h1>
+    <p>Imported event logs persist in the local database. Each re-import creates a new dataset version.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/api/sample-data/p2p_demo_events.csv" download>Download demo CSV</a>
+    <a class="btn" href="/api/sample-data/p2p_validation_demo.csv" download>Download validation-demo CSV</a>
+    <a class="btn" href="/import">Import a CSV</a>
+    <button type="button" class="btn btn-primary" id="load-demo">Load demo data</button>
+  </div>
+</div>
+<div id="demo-status"></div>
+<section class="card"><div id="datasets-root"><div class="state"><span class="spinner"></span> Loading…</div></div></section>
+<section class="card hidden" id="settings-card"></section>
+<section class="card hidden" id="report-card"></section>
+
+<dialog id="delete-dialog" aria-labelledby="delete-title">
+  <form method="dialog" id="delete-form">
+    <div class="dialog-head"><h2 id="delete-title">Delete dataset</h2></div>
+    <div class="dialog-body">
+      <p class="notice warn">This permanently removes the dataset, its events, import findings, conformance rules, alert
+        rules and alerts. This cannot be undone.</p>
+      <label>Type the dataset name <b id="delete-name" class="mono"></b> to confirm
+        <input id="delete-confirm" autocomplete="off" required></label>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" id="delete-cancel">Cancel</button>
+      <button type="submit" class="btn btn-danger solid" id="delete-submit" disabled>Delete permanently</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="{{ url_for('static', path='js/datasets.js') }}"></script>
+{% endblock %}

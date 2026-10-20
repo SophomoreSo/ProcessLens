@@ -40,4 +40,4 @@ def _make(page: str, title: str):
 
 
 for _page, _path, _title in PAGES:
-    router.add_api_route(_path, _make(_page, _title), methods=["GET"], response_class=HTMLResponse)
+    router.add_api_route(_path, _make(_page, _title), methods=["GET", "HEAD"], response_class=HTMLResponse)

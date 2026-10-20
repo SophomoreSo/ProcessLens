@@ -1,1 +1,15 @@
-<!doctype html><title>{{ title }}</title>
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    <p>Key figures for the cases selected by the current filters. Each figure states the population it is computed on.</p>
+  </div>
+  <div id="overview-exports"></div>
+</div>
+<div id="overview-root"><div class="state"><span class="spinner"></span> Loading…</div></div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/plotly-basic.min.js') }}"></script>
+<script type="module" src="{{ url_for('static', path='js/overview.js') }}"></script>
+{% endblock %}
