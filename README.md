@@ -255,7 +255,11 @@ Cases (deep link to a case, timeline + conformance findings) → filters `depart
 `rework=true` via the filter dialog (33 cases; identical in cases, graph, variants and CSV
 export) → Performance (charts, cohort comparison) → Conformance (evaluate rule, 37 cases not
 evaluable because of timestamp ties) → Alerts (acknowledge, re-evaluate: 0 new, status kept).
-Restart persistence is covered by `test_data_persists_across_restart`.
+Import wizard: `p2p_validation_demo.csv` uploaded → mappings suggested → source timezone
+Europe/Berlin → validation (17 rows, 11 invalid with per-code counts, tie warning) → quarantine
+import (6 events, 11 rows quarantined). Server stopped and restarted: dataset, rules and the
+acknowledged alert were still present. Phone width (375 px): no horizontal scrolling.
+Restart persistence is also covered by `test_data_persists_across_restart`.
 
 ### Manual checklist
 
