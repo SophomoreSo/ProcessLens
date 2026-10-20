@@ -70,4 +70,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif path.startswith("/static/"):
+            # Revalidate (cheap ETag check) so upgrades never run stale scripts.
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response

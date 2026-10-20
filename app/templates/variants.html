@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Variants</h1>
+    <p>A variant is the ordered sequence of activities of a case. Select a variant to highlight its path and list its cases.
+      Durations are <b>observed</b> (last − first event) and include cases that may still be running.</p>
+  </div>
+  <div id="variant-exports"></div>
+</div>
+<section class="card"><div id="variants-root"><div class="state"><span class="spinner"></span> Loading…</div></div></section>
+<div class="split">
+  <section class="card">
+    <div class="card-head"><h2>Path of the selected variant</h2><span class="small muted" id="path-note">Select a variant above.</span></div>
+    <div id="variant-graph" class="graph graph-small" role="img" aria-label="Process graph with selected variant highlighted"></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Cases of the selected variant</h2><span id="variant-actions"></span></div>
+    <div id="variant-cases"><div class="state">Select a variant to list its cases.</div></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='vendor/cytoscape.min.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/dagre.min.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/cytoscape-dagre.js') }}"></script>
+<script type="module" src="{{ url_for('static', path='js/variants.js') }}"></script>
+{% endblock %}

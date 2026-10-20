@@ -101,11 +101,13 @@ export class ProcessGraph {
     this.bind();
     this.restyle();
     this.applyVisibility();
+    // The container may change size while the page lays out; re-fit once it settles.
+    requestAnimationFrame(() => { if (this.cy) { this.cy.resize(); this.cy.fit(undefined, 20); } });
   }
 
   layoutOptions() {
     if (typeof cytoscapeDagre !== "undefined") {
-      return { name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60, edgeSep: 12, padding: 20 };
+      return { name: "dagre", rankDir: "LR", nodeSep: 30, rankSep: 70, edgeSep: 14, padding: 20 };
     }
     return { name: "breadthfirst", directed: true, roots: `#${START}`, padding: 20, spacingFactor: 1.1 };
   }
@@ -232,6 +234,7 @@ export class ProcessGraph {
     if (!this.cy) return;
     this.cy.elements().removeClass("highlight faded");
     this.cy.layout(this.layoutOptions()).run();
+    this.cy.resize();
     this.cy.fit(undefined, 20);
   }
 

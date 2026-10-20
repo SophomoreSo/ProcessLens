@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Cases</h1>
+    <p>Every case selected by the filters, with its complete event history. Click a case to open its timeline.</p>
+  </div>
+  <div id="case-exports"></div>
+</div>
+<div class="split">
+  <section class="card"><div id="cases-root"><div class="state"><span class="spinner"></span> Loading…</div></div></section>
+  <section class="card" aria-live="polite"><div id="case-detail"><div class="state">Select a case to see its timeline.</div></div></section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="{{ url_for('static', path='js/cases.js') }}"></script>
+{% endblock %}

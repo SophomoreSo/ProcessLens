@@ -58,6 +58,7 @@ code, .mono { font-family: var(--mono); font-size: .9em; }
 .small { font-size: .85rem; }
 .nowrap { white-space: nowrap; }
 .hidden { display: none !important; }
+.grow { flex: 1; }
 
 /* Shell */
 .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }

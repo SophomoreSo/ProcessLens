@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Alerts</h1>
+    <p>In-app alerts created by alert rules. One alert per rule and case: re-evaluating updates existing alerts instead of
+      duplicating them, and never resets the status you set.</p>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn" id="new-alert-rule">New alert rule</button>
+    <button type="button" class="btn btn-primary" id="evaluate-now">Evaluate rules now</button>
+  </div>
+</div>
+<p class="notice info"><b>No background monitoring is running.</b> Rules are evaluated only when you click “Evaluate rules now”
+  and automatically after each successful import. No e-mails, messages or external system actions are sent.</p>
+<div id="eval-result"></div>
+<section class="card hidden" id="alert-rule-editor"></section>
+<section class="card"><h2>Alert rules</h2><div id="alert-rules"><div class="state"><span class="spinner"></span> Loading…</div></div></section>
+<section class="card">
+  <div class="card-head"><h2>Alerts</h2>
+    <div class="actions">
+      <label class="inline">Status <select id="status-filter"><option value="open">open</option><option value="acknowledged">acknowledged</option>
+        <option value="resolved">resolved</option><option value="">all</option></select></label>
+      <label class="inline"><input type="checkbox" id="active-only"> condition still met</label>
+      <a class="btn btn-sm" id="alerts-export" download>Export CSV</a>
+    </div></div>
+  <div id="alerts-root"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="{{ url_for('static', path='js/alerts.js') }}"></script>
+{% endblock %}

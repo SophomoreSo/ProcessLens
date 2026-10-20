@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "processlens",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "app"],
+      "runtimeExecutable": "/Users/soday/Documents/Python Projects/Celonis-Python/.venv/bin/python",
+      "runtimeArgs": ["-u", "-m", "app"],
       "port": 8000
     }
   ]
