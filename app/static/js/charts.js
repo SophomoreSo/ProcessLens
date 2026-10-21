@@ -1,6 +1,6 @@
 // Thin Plotly.js wrappers. Values come pre-computed from the API.
 /* global Plotly */
-import { LANG, motionEnabled, t } from "./core.js";
+import { fmtNum, LANG, motionEnabled, t } from "./core.js";
 
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -64,7 +64,7 @@ export function histogramBars(el, hist, { color = cssVar("--chart-1"), name = t(
   const edges = hist.edges || [];
   const centers = hist.counts.map((_, i) => (edges[i] + edges[i + 1]) / 2);
   const widths = hist.counts.map((_, i) => edges[i + 1] - edges[i]);
-  const labels = hist.counts.map((_, i) => t("chart.bin_hours", { from: edges[i].toFixed(1), to: edges[i + 1].toFixed(1) }));
+  const labels = hist.counts.map((_, i) => t("chart.bin_hours", { from: fmtNum(edges[i]), to: fmtNum(edges[i + 1]) }));
   render(el, [{
     type: "bar", x: centers, y: hist.counts, width: widths, marker: { color }, name,
     customdata: labels, hovertemplate: "%{customdata}<br>%{y} " + esc(name) + "<extra></extra>",

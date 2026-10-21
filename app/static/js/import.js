@@ -58,7 +58,7 @@ function renderPreview() {
   const formats = ["ISO8601", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%m/%d/%Y %H:%M:%S",
     "%m/%d/%Y %H:%M", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "unix_s", "unix_ms", "custom"];
   clear(fmt, formats.map((f) => h("option", { value: f, selected: f === p.suggested_timestamp_format },
-    f === "custom" ? t("imp.ts.custom_option") : `${f}${scores[f] !== undefined ? " — " + t("imp.ts.parses", { pct: (scores[f] * 100).toFixed(0) }) : ""}`)));
+    f === "custom" ? t("imp.ts.custom_option") : `${f}${scores[f] !== undefined ? " — " + t("imp.ts.parses", { pct: fmtInt(scores[f] * 100) }) : ""}`)));
   $("#format-scores").textContent = p.timestamp_format_candidates?.length ? t("imp.ts.suggestion_note") : t("imp.ts.map_first");
 }
 

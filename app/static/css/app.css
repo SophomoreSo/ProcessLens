@@ -331,6 +331,7 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 :root[data-motion-active="true"] .motion-preview .dot:nth-child(2) { animation-delay: .2s; background: var(--accent-2); }
 :root[data-motion-active="true"] .motion-preview .dot:nth-child(3) { animation-delay: .4s; }
 .settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+.settings-grid > .actions { grid-column: 1 / -1; }
 .choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; color: var(--text); }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .choice small { display: block; color: var(--text-muted); }

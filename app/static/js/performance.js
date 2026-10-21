@@ -1,6 +1,6 @@
 import { cssVar, esc, onThemeChange, render as plot } from "./charts.js";
 import {
-  $, $$, api, bootPage, clear, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtPct, getFilterOptions, h, linkWith,
+  $, $$, api, bootPage, clear, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtNum, fmtPct, getFilterOptions, h, linkWith,
   loading, noDatasetState, readFilters, reveal, showError, t, table,
 } from "./core.js";
 
@@ -111,7 +111,7 @@ async function compare(e) {
   const row = (label, fa, fb) => ({ label, a: fa(a), b: fb ? fb(b) : fa(b) });
   const rows = [
     row(t("perf.cases_n"), (c) => fmtInt(c.case_count)),
-    row(t("perf.m.events_per_case"), (c) => (c.events_per_case === null ? "—" : c.events_per_case.toFixed(1))),
+    row(t("perf.m.events_per_case"), (c) => fmtNum(c.events_per_case)),
     row(t("perf.m.median_observed"), (c) => fmtDur(c.observed_duration.median)),
     row(t("perf.m.p90_observed"), (c) => fmtDur(c.observed_duration.p90)),
     row(t("perf.m.median_throughput"), (c) => `${fmtDur(c.completed_throughput.median)} (n=${fmtInt(c.completed_throughput.n)})`),
@@ -130,7 +130,7 @@ async function compare(e) {
     table([{ key: "act", label: t("field.activity") },
       { key: "a", label: a.label, num: true, render: (r) => fmtPct(a.activity_case_share[r.act] ?? 0) },
       { key: "b", label: b.label, num: true, render: (r) => fmtPct(b.activity_case_share[r.act] ?? 0) },
-      { key: "d", label: t("perf.difference_pp"), num: true, render: (r) => (((a.activity_case_share[r.act] ?? 0) - (b.activity_case_share[r.act] ?? 0)) * 100).toFixed(1) }],
+      { key: "d", label: t("perf.difference_pp"), num: true, render: (r) => fmtNum(((a.activity_case_share[r.act] ?? 0) - (b.activity_case_share[r.act] ?? 0)) * 100) }],
     acts.map((act) => ({ act }))),
     h("ul", { class: "small muted" }, lastCompare.notes.map((n) => h("li", {}, n))));
   reveal(out);

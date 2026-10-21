@@ -103,7 +103,7 @@ SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / Pos
 | Persistence | SQLAlchemy 2.1, Alembic, SQLite (WAL) |
 | Analysis | pandas 3.0, numpy; PM4Py 2.7 for XES export and as an independent cross-check of DFG discovery in the tests |
 | Frontend | HTML5, CSS3, vanilla ES modules, Cytoscape.js 3.30 (+ dagre layout), Plotly.js 2.35 (basic bundle) — vendored in `app/static/vendor`, no CDN at runtime |
-| Tests | pytest (71 tests) |
+| Tests | pytest (87 tests) |
 
 ### Project structure
 
@@ -174,10 +174,37 @@ increments the dataset **version**, invalidates cached analytics and evaluates a
 | **Conformance** | Rule CRUD (required, forbidden, A precedes B, max duration, max occurrences, start/end activity), compliant/violating/not-evaluable counts, case-level explanations, “use as filter”, CSV export. |
 | **Alerts** | Alert rules (duration threshold, rework, conformance violation), “Evaluate rules now”, alert list with open/acknowledged/resolved workflow. |
 | **Datasets** | Load demo data, dataset list with versions and source metadata, analysis settings (completion rule, reference time, display timezone), import findings and quarantine downloads, re-import, deletion with typed-name confirmation. |
+| **Settings** | Language (English, 한국어, Polski) and animations (follow system / on / off); stored in the database. |
 
 The **filter bar** (top of every analysis page) applies case-level filters — case-start date
 range, activity presence/absence, resource, department, variant, duration, rework, completion
 status, conformance result, transition — shown as removable chips and kept in the URL.
+
+### Settings: language and animations
+
+The **Settings** page (`/settings`, or `GET/PUT /api/preferences`) stores two user preferences in the
+`user_preferences` table, so they survive restarts:
+
+* **Language** — English, Korean (한국어) or Polish (Polski). Pages are rendered server-side in the
+  selected language; numbers, dates and chart axes use the matching locale (`en-US`, `ko-KR`, `pl-PL`).
+  Server-generated texts (validation findings, conformance explanations, rule descriptions, alert
+  messages, job errors, API error messages, notes) are stored as a message key plus parameters and
+  rendered in the language of each request, so alerts created earlier also appear translated. API
+  clients may override the language per request with the `X-ProcessLens-Language: en|ko|pl` header.
+  Data values such as activity names, case IDs and user-entered rule names are never translated.
+  Catalogs live in `app/i18n/locales/{en,ko,pl}.json`; a test enforces that all three have the same
+  keys and placeholders. Polish texts use “label: value” phrasing for numbers to avoid incorrect
+  plural forms.
+* **Animations** — *follow system* (default: animate unless the OS requests reduced motion), *on* or
+  *off*. Animations include staggered page/card entrances, KPI count-up, chart bars growing in and
+  animated transitions, animated graph zoom/fit/reset and layout, smooth path highlighting, an
+  optional **“Animate flow”** effect that moves dashes along directly-follows edges, and dialog/toast/
+  badge transitions. When animations are off, a global rule disables every CSS animation and
+  transition and the JavaScript effects are skipped.
+
+Translations were written for this release and have not yet been reviewed by native speakers.
+Rows imported or alerts created before migration `0002` show their original English text until they
+are re-imported or re-evaluated.
 
 ### Exports
 
@@ -232,7 +259,7 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
 
 ### Automated (run for this release)
 
-`python -m pytest` → **71 passed** (Python 3.11.6, macOS arm64), both in the development venv and in a
+`python -m pytest` → **87 passed** (Python 3.11.6, macOS arm64). The original 71 tests also passed in a
 fresh venv created with `python3.11 -m venv` + `pip install -r requirements-dev.txt` (`pip check`: no broken
 requirements). Coverage includes: valid and
 invalid imports, identifier preservation, timestamp normalization and DST policies, tie
@@ -260,6 +287,14 @@ Europe/Berlin → validation (17 rows, 11 invalid with per-code counts, tie warn
 import (6 events, 11 rows quarantined). Server stopped and restarted: dataset, rules and the
 acknowledged alert were still present. Phone width (375 px): no horizontal scrolling.
 Restart persistence is also covered by `test_data_persists_across_restart`.
+
+Settings (second round): Settings → 한국어 → Save reloaded every page in Korean (Overview KPIs,
+Korean month names on chart axes, durations such as “28일”); Polish was checked on every page
+(Overview, Process explorer, Variants, Cases, Performance with cohort comparison, Conformance
+evaluation, Alerts re-evaluation, Datasets findings) with no untranslated keys and no error notices.
+With animations on, the flow animation advanced the edge dash offset; with animations off,
+`document.getAnimations()` was empty, edges were solid and the flow toggle was disabled. An existing
+database was upgraded from migration 0001 to 0002 without data changes.
 
 ### Manual checklist
 
@@ -365,6 +400,8 @@ before distributing ProcessLens. Vendored JS libraries are MIT-licensed (see
 * SQLite persistence with Alembic migrations; caching keyed by dataset version, settings
   revision, rule revision and normalized filters.
 * Local-deployment security controls listed above; Docker image and compose file.
+* User settings: interface language (English, Korean, Polish) with localized server messages, and
+  animations (follow system / on / off).
 
 ## Known limitations
 

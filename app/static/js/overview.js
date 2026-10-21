@@ -1,6 +1,6 @@
 import { cssVar, esc, histogramBars, onThemeChange, render as plot } from "./charts.js";
 import {
-  $, api, badge, bootPage, clear, countUp, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtPct, h, linkWith,
+  $, api, badge, bootPage, clear, countUp, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtNum, fmtPct, h, linkWith,
   loading, noDatasetState, readFilters, reveal, showError, t, table, variantSequence,
 } from "./core.js";
 
@@ -67,7 +67,7 @@ async function render() {
   const popNote = d.case_count === d.total_case_count ? t("ov.all_cases") : t("ov.filtered_cases", { n: fmtInt(d.case_count), total: fmtInt(d.total_case_count) });
   const kpis = h("div", { class: "kpis" },
     kpi(t("ov.kpi.cases"), d.case_count, popNote, { title: t("ov.kpi.cases_title"), format: fmtInt }),
-    kpi(t("ov.kpi.events"), d.event_count, t("ov.kpi.per_case", { n: (d.event_count / d.case_count).toFixed(1) }), { title: t("ov.kpi.events_title"), format: fmtInt }),
+    kpi(t("ov.kpi.events"), d.event_count, t("ov.kpi.per_case", { n: fmtNum(d.event_count / d.case_count) }), { title: t("ov.kpi.events_title"), format: fmtInt }),
     kpi(t("ov.kpi.activities"), d.activity_count, t("ov.kpi.distinct_names"), { format: fmtInt }),
     kpi(t("ov.kpi.completed"), sc.completed, d.completion_mode === "none" ? t("ov.kpi.no_rule") : t("ov.kpi.of_cases", { pct: fmtPct(sc.completed / d.case_count) }), { format: fmtInt }),
     kpi(t("ov.kpi.incomplete_unknown"), `${fmtInt(sc.incomplete)} / ${fmtInt(sc.unknown)}`, t("ov.kpi.not_known_finished")),
