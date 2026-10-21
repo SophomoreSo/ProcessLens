@@ -166,6 +166,9 @@ class UploadPreview(BaseModel):
     suggested_attributes: list[str]
     suggested_timestamp_format: str
     timestamp_format_candidates: list[dict]
+    source_format: str = "csv"
+    conversion: dict | None = Field(None, description="XES only: how the log was converted to rows")
+    conversion_findings: list[dict] = Field(default_factory=list)
 
 
 class Finding(BaseModel):

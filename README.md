@@ -1,7 +1,7 @@
 # ProcessLens
 
 ProcessLens is a local-first, single-user web application for **process mining and process
-analysis**. A business analyst can import a CSV event log, map and validate it, and then explore
+analysis**. A business analyst can import a CSV or XES event log, map and validate it, and then explore
 the process: KPIs, a directly-follows graph, variants, case histories, performance, rule-based
 conformance, cohort comparisons, in-app alerts and exports. On top of that it offers process
 discovery with 14 algorithms, formal conformance checking (token replay, alignments, soundness,
@@ -158,7 +158,7 @@ SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / Pos
 | Persistence | SQLAlchemy 2.1, Alembic, SQLite (WAL) |
 | Analysis | pandas 3.0, numpy; PM4Py 2.7.23 for discovery, formal conformance, OC Petri nets and XES export (run in a separate worker process), and as a cross-check of DFG discovery in the tests |
 | Frontend | HTML5, CSS3, vanilla ES modules, Cytoscape.js 3.30 (+ dagre layout), Plotly.js 2.35 (basic bundle) — vendored in `app/static/vendor`, no CDN at runtime |
-| Tests | pytest (162 tests) |
+| Tests | pytest (167 tests) |
 
 ### Project structure
 
@@ -201,8 +201,9 @@ Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 
 ### Import wizard (Import page)
 
-1. **Upload** a CSV (`.csv`, `.txt`, `.tsv`). The file gets a server-generated name; size, row,
-   column and field-length limits are enforced; binary files are refused.
+1. **Upload** a CSV (`.csv`, `.txt`, `.tsv`) or an **XES** event log (`.xes`, `.xes.gz`). The file
+   gets a server-generated name; size, row, column and field-length limits are enforced; binary
+   files are refused. See [XES import](#xes-import) for how XES logs become rows.
 2. **Preview & mapping**: sample rows, detected encoding/delimiter (overridable), suggested
    column mapping. Required: `case_id`, `activity`, `timestamp`. Optional: `event_id`,
    `resource`, `department`, `cost`, `start_timestamp`, `case_status`, plus any extra columns
@@ -219,6 +220,35 @@ Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 5. **Confirm**: new dataset or new version of an existing one, invalid-row policy —
    **reject the import** if any row is invalid, or **quarantine** invalid rows (stored with
    their reasons, excluded from analysis, downloadable) — completion rule and reference time.
+
+### XES import
+
+XES files (IEEE 1849, also gzip-compressed) are converted on upload into the same table the CSV
+wizard uses — one row per event — so mapping, timestamp options, validation, quarantine and
+versioning work exactly as for CSV. The conversion streams the XML (100,000 events in about
+1 s on the benchmark machine).
+
+* **Columns:** event attributes keep their XES keys (`concept:name`, `time:timestamp`,
+  `org:resource`, `org:group`, `cost:total`, `identity:id`, …); trace attributes are prefixed
+  with `case:` (`case:concept:name` is the case id). The standard keys are mapped
+  automatically; the other columns are offered as event attributes.
+* **Lifecycle:** *one row per completed activity* pairs each `complete` event with the earliest
+  unmatched `start` event of the same activity (and `concept:instance`, if present) in the same
+  trace and fills `start_timestamp`; other transitions and unmatched starts are left out and
+  counted. *One row per event* keeps every event and the `lifecycle:transition` column.
+  Pairing is preselected only when the log contains `start` events; the choice can be changed
+  in step 2 (*Convert again*) and is recorded with the dataset (`import_options.xes_conversion`).
+* **Reported, not imported:** list and container attributes, meta-attributes, log-level
+  attributes, events outside traces, empty traces; global default values are not filled in and
+  classifiers are not applied (the activity is the mapped column). Traces without
+  `concept:name` produce rows without a case id, which validation rejects.
+* **Timestamps** keep their offsets; values without an offset use the source timezone chosen
+  in step 3.
+* **Safety:** documents with a DTD (`<!DOCTYPE`/`<!ENTITY`) are refused, and the size limit
+  applies to the *uncompressed* XML of `.xes.gz` files.
+
+The XES **export** (`…/exports/events.xes`) now omits missing resources, departments and costs
+instead of writing empty or `nan` values, so an exported log imports again unchanged (tested).
 
 The import runs as a background job with progress; all data is written in **one transaction**
 so a failed or interrupted import never leaves partial data. Each successful import
@@ -338,6 +368,13 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
 ## Verification
 
 ### Automated (run for this release)
+
+**XES import:** `python -m pytest` → **167 passed**, including `test_xes.py` (5): conversion and
+suggested mapping, lifecycle pairing vs one row per event, switching and importing with
+identifiers, timestamps, start times, costs and case attributes intact, `.xes.gz`, DTD
+refusal and malformed files, traces without a case id, and an export → import round trip with
+identical KPIs. Checked live in the wizard with an XES export of the demo log (600 traces,
+5,304 events) in both lifecycle modes.
 
 **Admin/guest release:** `python -m pytest` → **162 passed**, including `test_guest.py` (16):
 guest pages and missing admin pages/controls, guest reads of admin data, refusal of every kind
@@ -494,6 +531,7 @@ server processes against one database is not supported.
 | `0003` | mining runs, run artifacts, reference models |
 | `0004` | object-centric logs: events, objects, object attributes, E2O and O2O relationships |
 | `0005` | task-event logs and task events |
+| `0006` | uploads remember their source format, original XES file and conversion summary |
 
 Migrations run automatically on start (`alembic upgrade head`); existing databases are upgraded
 in place without data changes.

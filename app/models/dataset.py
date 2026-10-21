@@ -31,7 +31,11 @@ def utcnow() -> datetime:
 
 
 class Upload(Base):
-    """A staged CSV file awaiting (or used by) an import."""
+    """A staged file awaiting (or used by) an import.
+
+    The import pipeline always reads the CSV ``stored_name``. For an XES upload that CSV is
+    the converted table; the original file is kept as ``source_name`` so it can be
+    converted again with other options, and ``conversion`` records what was done."""
 
     __tablename__ = "uploads"
 
@@ -46,6 +50,9 @@ class Upload(Base):
     row_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_validation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_format: Mapped[str] = mapped_column(String(8), default="csv", server_default="csv")  # csv | xes
+    source_name: Mapped[str | None] = mapped_column(String(64), nullable=True)  # stored original (XES)
+    conversion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Dataset(Base):

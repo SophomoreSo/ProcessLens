@@ -16,7 +16,7 @@ from app.database import SessionLocal
 from app.models import Dataset, Event, ImportFinding, ImportJob, QuarantinedRow, Upload
 from app.models.dataset import utcnow
 from app.schemas.imports import ConfirmImportRequest, ImportOptions
-from app.services import jobs
+from app.services import jobs, xes
 from app.services.cache import cache
 from app.services.ingestion import (
     IngestionError,
@@ -49,24 +49,58 @@ class ImportRejected(Exception):
 
 # --------------------------------------------------------------------------- uploads
 def _register_upload(db: Session, staged: StagedFile, original: str, settings: Settings) -> tuple[Upload, dict]:
+    csv_path, conversion = staged.path, None
     try:
-        encoding = detect_encoding(staged.path)
-        delimiter = detect_delimiter(staged.path, encoding)
-        preview = build_preview(staged.path, encoding, delimiter, settings)
-        row_count = count_data_rows(staged.path, encoding, delimiter)
+        if staged.source_format == "xes":
+            csv_path = settings.upload_dir / f"{staged.upload_id}.csv"
+            conversion = xes.convert(staged.path, csv_path, settings)
+        encoding = detect_encoding(csv_path)
+        delimiter = detect_delimiter(csv_path, encoding)
+        preview = build_preview(csv_path, encoding, delimiter, settings)
+        row_count = count_data_rows(csv_path, encoding, delimiter)
     except IngestionError:
         staged.path.unlink(missing_ok=True)
+        csv_path.unlink(missing_ok=True)
         raise
     upload = Upload(
-        id=staged.upload_id, original_filename=original, stored_name=staged.stored_name,
+        id=staged.upload_id, original_filename=original, stored_name=csv_path.name,
         size_bytes=staged.size_bytes, sha256=staged.sha256, encoding=encoding, delimiter=delimiter,
-        columns=preview["columns"], row_count=row_count,
+        columns=preview["columns"], row_count=row_count, source_format=staged.source_format,
+        source_name=staged.stored_name if staged.source_format == "xes" else None, conversion=conversion,
     )
     db.add(upload)
     db.commit()
-    log.info("Staged upload %s (%d bytes, %d rows, %d columns)", upload.id, upload.size_bytes, row_count,
-             len(preview["columns"]))
-    return upload, preview
+    log.info("Staged %s upload %s (%d bytes, %d rows, %d columns)", upload.source_format, upload.id,
+             upload.size_bytes, row_count, len(preview["columns"]))
+    return upload, _with_source(upload, preview)
+
+
+def _with_source(upload: Upload, preview: dict) -> dict:
+    return {**preview, "source_format": upload.source_format or "csv", "conversion": upload.conversion,
+            "conversion_findings": xes.findings(upload.conversion) if upload.conversion else []}
+
+
+def reconvert_xes(db: Session, upload: Upload, lifecycle: str) -> dict:
+    """Convert the stored original XES file again with another lifecycle handling."""
+    settings = get_settings()
+    if upload.source_format != "xes" or not upload.source_name:
+        raise IngestionError("not_xes")
+    src = settings.upload_dir / upload.source_name
+    if not src.exists():
+        raise IngestionError("upload_missing")
+    tmp = settings.upload_dir / f"{upload.id}.converting.csv"
+    try:
+        conversion = xes.convert(src, tmp, settings, lifecycle)
+        tmp.replace(upload_path(upload))
+    finally:
+        tmp.unlink(missing_ok=True)
+    preview = build_preview(upload_path(upload), upload.encoding, upload.delimiter, settings)
+    upload.conversion = conversion
+    upload.columns = preview["columns"]
+    upload.row_count = count_data_rows(upload_path(upload), upload.encoding, upload.delimiter)
+    upload.last_validation = None
+    db.commit()
+    return _with_source(upload, preview)
 
 
 def create_upload(db: Session, stream: BinaryIO, filename: str | None) -> tuple[Upload, dict]:
@@ -87,7 +121,10 @@ def upload_path(upload: Upload) -> Path:
 
 def preview_for_upload(upload: Upload, encoding: str | None = None, delimiter: str | None = None) -> dict:
     settings = get_settings()
-    return build_preview(upload_path(upload), encoding or upload.encoding, delimiter or upload.delimiter, settings)
+    if upload.source_format == "xes":  # the converted table is always UTF-8 with commas
+        encoding = delimiter = None
+    return _with_source(upload, build_preview(upload_path(upload), encoding or upload.encoding,
+                                              delimiter or upload.delimiter, settings))
 
 
 # --------------------------------------------------------------------------- validation
@@ -96,7 +133,11 @@ def run_validation(upload: Upload, options: ImportOptions, max_findings: int | N
     path = upload_path(upload)
     if not path.exists():
         raise IngestionError("upload_missing")
-    table = read_raw_table(path, options.encoding or upload.encoding, options.delimiter or upload.delimiter, settings)
+    if upload.source_format == "xes":  # converted table: fixed encoding and delimiter
+        table = read_raw_table(path, upload.encoding, upload.delimiter, settings)
+    else:
+        table = read_raw_table(path, options.encoding or upload.encoding, options.delimiter or upload.delimiter,
+                               settings)
     return validate_table(table, options.mapping, options.timestamps, max_findings=max_findings)
 
 
@@ -196,6 +237,9 @@ def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportReq
     ds.source_size_bytes = upload.size_bytes
     ds.upload_id = upload.id
     ds.import_options = request.model_dump(mode="json")
+    if upload.source_format == "xes":  # provenance: how the XES file became rows
+        ds.import_options["source_format"] = "xes"
+        ds.import_options["xes_conversion"] = {k: v for k, v in (upload.conversion or {}).items() if k != "columns"}
     ds.imported_at = utcnow()
     ds.source_row_count = result.total_rows
     ds.event_count = len(norm)
@@ -328,4 +372,6 @@ def delete_upload_file_if_unused(db: Session, upload_id: str | None) -> None:
     upload = db.get(Upload, upload_id)
     if upload is not None:
         upload_path(upload).unlink(missing_ok=True)
+        if upload.source_name:
+            (get_settings().upload_dir / upload.source_name).unlink(missing_ok=True)
         db.delete(upload)

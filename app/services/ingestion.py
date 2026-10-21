@@ -1,5 +1,8 @@
 """CSV ingestion: safe staging of uploads, structural parsing and previews.
 
+XES uploads are staged here too and converted to the same CSV table by
+``app/services/xes.py``.
+
 Every value is read as a string (identifiers keep leading zeros). Structural
 problems that affect a single row (wrong field count) are reported per row;
 problems that make the whole file unreadable raise :class:`IngestionError`.
@@ -21,6 +24,7 @@ from app.config import Settings
 from app.i18n import t
 
 ALLOWED_EXTENSIONS = {".csv", ".txt", ".tsv"}
+XES_SUFFIXES = (".xes.gz", ".xes")  # longest first
 SNIFF_BYTES = 256 * 1024
 
 SYNONYMS: dict[str, list[str]] = {
@@ -30,7 +34,7 @@ SYNONYMS: dict[str, list[str]] = {
     "timestamp": ["timestamp", "time:timestamp", "end_timestamp", "complete_timestamp", "completion_time",
                   "end_time", "event_time", "time", "datetime", "date"],
     "start_timestamp": ["start_timestamp", "start_time", "start", "started_at", "time:start"],
-    "event_id": ["event_id", "eventid", "event_key", "id"],
+    "event_id": ["event_id", "eventid", "event_key", "identity:id", "id"],
     "resource": ["resource", "org:resource", "user", "user_name", "agent", "performer", "employee"],
     "department": ["department", "dept", "org:group", "team", "org_unit", "unit"],
     "cost": ["cost", "costs", "amount", "cost:total", "price", "value"],
@@ -72,6 +76,12 @@ class StagedFile:
     path: Path
     size_bytes: int
     sha256: str
+    source_format: str = "csv"  # csv | xes (path is then the original XES file)
+
+
+def xes_suffix(filename: str | None) -> str | None:
+    name = (filename or "").lower()
+    return next((s for s in XES_SUFFIXES if name.endswith(s)), None)
 
 
 @dataclass
@@ -94,11 +104,12 @@ def sanitize_display_filename(name: str | None) -> str:
 def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Settings) -> StagedFile:
     """Stream an upload to a server-generated filename, enforcing the size limit."""
     ext = Path(original_filename or "").suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    xes = xes_suffix(original_filename)
+    if ext not in ALLOWED_EXTENSIONS and not xes:
         raise IngestionError("unsupported_file_type", ext=ext or "-")
     settings.ensure_dirs()
     upload_id = uuid.uuid4().hex
-    stored_name = f"{upload_id}.csv"
+    stored_name = f"{upload_id}{xes or '.csv'}"
     path = settings.upload_dir / stored_name
     hasher = hashlib.sha256()
     size = 0
@@ -107,7 +118,7 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
         with path.open("wb") as out:
             while chunk := stream.read(1024 * 1024):
                 if first_chunk:
-                    if b"\x00" in chunk[:8192]:
+                    if xes != ".xes.gz" and b"\x00" in chunk[:8192]:
                         raise IngestionError("binary_file")
                     first_chunk = False
                 size += len(chunk)
@@ -121,7 +132,7 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
     if size == 0:
         path.unlink(missing_ok=True)
         raise IngestionError("empty_file")
-    return StagedFile(upload_id, stored_name, path, size, hasher.hexdigest())
+    return StagedFile(upload_id, stored_name, path, size, hasher.hexdigest(), "xes" if xes else "csv")
 
 
 def detect_encoding(path: Path) -> str:

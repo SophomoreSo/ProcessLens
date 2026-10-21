@@ -15,8 +15,9 @@
   <h2>1 · {{ t('imp.upload.title') }}</h2>
   <div class="dropzone" id="dropzone">
     <p><b>{{ t('imp.upload.drop') }}</b></p>
-    <input type="file" id="file-input" accept=".csv,.txt,.tsv,text/csv" aria-label="{{ t('imp.upload.choose') }}">
+    <input type="file" id="file-input" accept=".csv,.txt,.tsv,.xes,.gz,text/csv" aria-label="{{ t('imp.upload.choose') }}">
     <p class="small muted">{{ t('imp.upload.required') }}</p>
+    <p class="small muted">{{ t('imp.upload.xes_note') }}</p>
   </div>
   <p class="small muted">{{ t('imp.upload.no_file') }}
     <a href="/api/sample-data/p2p_demo_events.csv" download>{{ t('imp.upload.demo_log') }}</a> ·
@@ -27,7 +28,19 @@
 <section class="card hidden" data-panel="2">
   <div class="card-head"><h2>2 · {{ t('imp.step.mapping') }}</h2><span id="file-info" class="small muted"></span></div>
   <div id="column-warnings"></div>
-  <div class="form-grid">
+  <div id="xes-box" class="hidden">
+    <h3>{{ t('xes.title') }}</h3>
+    <div id="xes-summary" class="small"></div>
+    <div class="form-grid" style="margin-top:8px">
+      <label>{{ t('xes.lifecycle') }}<select id="xes-lifecycle">
+        <option value="pair_start_complete">{{ t('xes.mode.pair_start_complete') }}</option>
+        <option value="all_events">{{ t('xes.mode.all_events') }}</option></select></label>
+      <div class="actions" style="align-self:end"><button type="button" class="btn" id="xes-reconvert">{{ t('xes.reconvert') }}</button></div>
+    </div>
+    <p class="small muted">{{ t('xes.lifecycle_help') }}</p>
+    <div id="xes-findings"></div>
+  </div>
+  <div class="form-grid" id="csv-options">
     <label>{{ t('imp.encoding') }}<select id="encoding"><option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8 (BOM)</option>
       <option value="cp1252">Windows-1252</option><option value="latin-1">Latin-1</option></select></label>
     <label>{{ t('imp.delimiter') }}<select id="delimiter"><option value=",">{{ t('imp.delim.comma') }} ,</option><option value=";">{{ t('imp.delim.semicolon') }} ;</option>

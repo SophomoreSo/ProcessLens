@@ -34,13 +34,44 @@ async function upload(file) {
   try {
     state.preview = await api("/api/uploads", { method: "POST", form });
   } catch (err) { return showError(status, err); }
-  clear(status, h("div", { class: "notice ok" }, t("imp.uploaded", { name: state.preview.original_filename, rows: fmtInt(state.preview.row_count), columns: state.preview.columns.length })));
+  clear(status, h("div", { class: "notice ok" }, t(state.preview.source_format === "xes" ? "imp.uploaded_xes" : "imp.uploaded",
+    { name: state.preview.original_filename, rows: fmtInt(state.preview.row_count), columns: state.preview.columns.length })));
   renderPreview();
   goto(2);
 }
 
+function renderXes(p) {
+  const xes = p.source_format === "xes";
+  $("#xes-box").classList.toggle("hidden", !xes);
+  $("#csv-options").classList.toggle("hidden", xes); // the converted table is always UTF-8 with commas
+  if (!xes) return;
+  const c = p.conversion;
+  $("#xes-lifecycle").value = c.lifecycle_mode;
+  const transitions = Object.entries(c.lifecycle_transitions).map(([k, v]) => `${k === "(none)" ? t("xes.no_transition") : k} × ${fmtInt(v)}`).join(", ");
+  clear($("#xes-summary"), h("dl", { class: "prov" },
+    c.log_name ? [h("dt", {}, t("xes.log_name")), h("dd", {}, c.log_name)] : null,
+    h("dt", {}, t("xes.traces")), h("dd", {}, fmtInt(c.traces)),
+    h("dt", {}, t("xes.events")), h("dd", {}, fmtInt(c.events_in_file)),
+    h("dt", {}, t("xes.rows")), h("dd", {}, fmtInt(c.rows)),
+    h("dt", {}, t("xes.transitions")), h("dd", {}, transitions || "—"),
+    c.extensions.length ? [h("dt", {}, t("xes.extensions")), h("dd", {}, c.extensions.join(", "))] : null));
+  clear($("#xes-findings"), p.conversion_findings.map((f) => h("div", { class: `notice small ${f.severity === "error" ? "danger" : f.severity === "warning" ? "warn" : "info"}` }, f.message)));
+}
+
+async function reconvertXes() {
+  const btn = $("#xes-reconvert");
+  btn.disabled = true;
+  try {
+    state.preview = await api(`/api/uploads/${state.preview.upload_id}/xes-options`, { method: "POST", body: { lifecycle: $("#xes-lifecycle").value } });
+    clear($("#attributes")); // columns changed: start again from the suggested attributes
+    renderPreview();
+    toast(t("xes.reconverted", { rows: fmtInt(state.preview.row_count) }));
+  } catch (err) { toast(err.message, "error"); } finally { btn.disabled = false; }
+}
+
 function renderPreview() {
   const p = state.preview;
+  renderXes(p);
   $("#file-info").textContent = t("imp.file_info", { name: p.original_filename, bytes: fmtInt(p.size_bytes), rows: fmtInt(p.row_count) });
   $("#encoding").value = p.encoding;
   $("#delimiter").value = p.delimiter === "\t" ? "\\t" : p.delimiter;
@@ -185,6 +216,7 @@ const dz = $("#dropzone");
 dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("drag"); });
 dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
 dz.addEventListener("drop", (e) => { e.preventDefault(); dz.classList.remove("drag"); upload(e.dataTransfer.files[0]); });
+$("#xes-reconvert").addEventListener("click", reconvertXes);
 $("#reparse").addEventListener("click", async () => {
   try {
     const p = await api(`/api/uploads/${state.preview.upload_id}`, { params: { encoding: $("#encoding").value, delimiter: $("#delimiter").value } });

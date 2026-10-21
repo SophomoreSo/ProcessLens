@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import request_lang
@@ -39,13 +42,15 @@ def _get_upload(db: Session, upload_id: str) -> Upload:
 
 
 def _preview(up: Upload, data: dict, lang: str) -> UploadPreview:
-    data = {**data, "column_warnings": [t(lang, w["key"], **w["params"]) for w in data["column_warnings"]]}
+    data = {**data, "column_warnings": [t(lang, w["key"], **w["params"]) for w in data["column_warnings"]],
+            "conversion_findings": [{**f, "message": t(lang, f["key"], **f["params"])}
+                                    for f in data.get("conversion_findings", [])]}
     return UploadPreview(upload_id=up.id, original_filename=up.original_filename, size_bytes=up.size_bytes,
                          encoding=up.encoding, delimiter=up.delimiter, row_count=up.row_count, **data)
 
 
 @router.post("/uploads", response_model=UploadPreview, status_code=201,
-             summary="Upload a CSV and get a preview with suggested mappings")
+             summary="Upload a CSV or XES (.xes, .xes.gz) file and get a preview with suggested mappings")
 def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     up, data = importer.create_upload(db, file.file, file.filename)
     return _preview(up, data, lang)
@@ -60,6 +65,17 @@ def get_upload(upload_id: str, encoding: str | None = None, delimiter: str | Non
     except ValueError as exc:
         raise AppError(422, "validation_error", str(exc)) from None
     return _preview(up, importer.preview_for_upload(up, enc, delim), lang)
+
+
+class XesOptions(BaseModel):
+    lifecycle: Literal["all_events", "pair_start_complete"]
+
+
+@router.post("/uploads/{upload_id}/xes-options", response_model=UploadPreview,
+             summary="Convert a staged XES upload again with another lifecycle handling")
+def xes_options(upload_id: str, body: XesOptions, db: Session = Depends(get_db), lang: str = Depends(request_lang)):
+    up = _get_upload(db, upload_id)
+    return _preview(up, importer.reconvert_xes(db, up, body.lifecycle), lang)
 
 
 @router.post("/uploads/{upload_id}/validate", response_model=ValidationSummary,

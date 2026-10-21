@@ -101,12 +101,17 @@ def write_xes(events: pd.DataFrame) -> Path:
         "concept:name": events["activity"].astype(str),
         "time:timestamp": events["ts"],
     })
+    # Missing values must be absent from the XES (PM4Py omits None in object columns);
+    # NaN would be written as value="nan" and empty strings as empty attributes.
+    def optional(col: pd.Series) -> pd.Series:
+        return col.astype(object).where(col.notna(), None)
+
     if events["resource"].notna().any():
-        df["org:resource"] = events["resource"].fillna("").astype(str)
+        df["org:resource"] = optional(events["resource"])
     if events["department"].notna().any():
-        df["org:group"] = events["department"].fillna("").astype(str)
+        df["org:group"] = optional(events["department"])
     if events["cost"].notna().any():
-        df["cost:total"] = events["cost"]
+        df["cost:total"] = optional(events["cost"])
     tmp = tempfile.NamedTemporaryFile(prefix="processlens_", suffix=".xes", delete=False)
     tmp.close()
     pm4py.write_xes(df, tmp.name, case_id_key="case:concept:name")

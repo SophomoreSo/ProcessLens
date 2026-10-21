@@ -63,3 +63,14 @@ Variants (source, action level): Email·Open → PDF·View → ERP·Enter → ER
 in 2 sessions, the same without ERP·Post in 1. Repeated sequences (≥ 2
 sessions): the 3-step prefix (3 sessions) and the 4-step sequence (2 sessions).
 Application switches: 6 of 8 consecutive steps; Email→PDF 3, PDF→ERP 3.
+
+# XES fixture: `lifecycle.xes`
+
+Three traces: `007` (A start 08:00+01:00 → A complete 09:00+01:00 by ann, cost 12.5; B
+*schedule*; B without transition by bob, with a list attribute and a meta-attribute),
+`C2` (A start/complete 08:00Z/08:30Z; C start without complete) and `EMPTY` (no events).
+Expected (asserted in `tests/test_xes.py`): 7 events in the file. *Pairing* gives 3 rows
+(007: A with start time, B; C2: A with start time), 2 paired starts, 1 dropped `schedule`
+event, 1 start without complete. *All events* gives 7 rows with a `lifecycle:transition`
+column. Trace attribute `customer` becomes column `case:customer`; the list `tags` and the
+meta-attribute are counted as not imported; the global default and the classifier are reported.
