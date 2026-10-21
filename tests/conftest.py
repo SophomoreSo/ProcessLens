@@ -12,6 +12,7 @@ os.environ.setdefault("PROCESSLENS_DATA_DIR", _BOOT_DIR)
 os.environ["PROCESSLENS_ALLOWED_HOSTS"] = "testserver,localhost,127.0.0.1"
 os.environ["PROCESSLENS_SECRET_KEY"] = "test-secret-key"
 os.environ["PROCESSLENS_LOG_LEVEL"] = "WARNING"
+os.environ["PROCESSLENS_ENABLE_TEST_TASKS"] = "true"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

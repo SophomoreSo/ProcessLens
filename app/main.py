@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
 from contextlib import asynccontextmanager
 
@@ -10,11 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
-from app.api import alerts, analytics, conformance, datasets, exports, imports, meta, pages, preferences
+from app.api import alerts, analytics, conformance, datasets, exports, imports, meta, mining, pages, preferences
 from app.config import PROJECT_ROOT, get_settings
 from app.database import init_engine
 from app.errors import install_error_handlers
 from app.migrate import upgrade_to_head
+from app.mining.runs import recover_interrupted_runs
+from app.mining.worker import worker as mining_worker
 from app.security import SecurityMiddleware
 from app.services.jobs import recover_interrupted_jobs
 from app.services.preferences import reset_cache as reset_preferences_cache
@@ -42,6 +45,7 @@ async def lifespan(_app: FastAPI):
     init_engine()
     reset_preferences_cache()
     recover_interrupted_jobs()
+    recover_interrupted_runs()
     yield
 
 
@@ -53,7 +57,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "app" / "static")), name="static")
-    for module in (meta, preferences, imports, datasets, analytics, conformance, alerts, exports):
+    for module in (meta, preferences, imports, datasets, analytics, conformance, alerts, exports, mining):
         app.include_router(module.router)
     app.include_router(conformance.summary_router)
     app.include_router(pages.router)
@@ -61,3 +65,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+atexit.register(mining_worker.kill)  # stop the isolated mining worker process on exit

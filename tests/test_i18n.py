@@ -31,8 +31,15 @@ def used_keys() -> set[str]:
     for p in (PROJECT_ROOT / "app" / "static" / "js").glob("*.js"):
         keys |= set(re.findall(r'\bt\("([a-z0-9_.]+)"', p.read_text()))
     for p in (PROJECT_ROOT / "app").rglob("*.py"):
-        keys |= set(re.findall(r'"((?:finding|error|conf|rule\.desc|alert\.msg|note|job|import|preview|demo|status)'
-                               r'\.[a-z0-9_.]+)"', p.read_text()))
+        keys |= set(re.findall(r'"((?:finding|error|conf|rule\.desc|alert\.msg|note|job|import|preview|demo|status|algo'
+                               r'|run|ref|ocel|task|guide|entity)\.[a-z0-9_.]+)"', p.read_text()))
+    from app.mining import registry as mining_registry
+
+    for spec in mining_registry.ALGORITHMS.values():
+        keys |= {spec.name_key, *spec.preconditions, *spec.limitations}
+        keys |= {p_.help_key for p_ in spec.params}
+        if spec.unavailable_reason:
+            keys.add(spec.unavailable_reason)
     keys |= {f"rule.type.{r}" for r in RULE_PARAM_MODELS} | {f"rule.help.{r}" for r in RULE_PARAM_MODELS}
     keys |= {f"conf.{s}.{k}" for s in ("start", "end") for k in ("ok", "bad", "tie_ok", "tie_bad", "tie_mixed")}
     keys |= {f"conf.dur.{a}{b}" for a in ("over", "within") for b in ("", "_open")}

@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     max_field_chars: int = 2_000
     max_findings_stored: int = 100_000
 
+    # --- Mining jobs (discovery / conformance / comparison) ----------------
+    mining_timeout_s: float = 300.0
+    mining_max_timeout_s: float = 3600.0
+    mining_max_alignment_variants: int = 2000
+    # Enables the diagnostic "sleep" run used by the test-suite (never in production).
+    enable_test_tasks: bool = False
+
     # --- Analytics -------------------------------------------------------
     cache_max_entries: int = 256
     log_level: str = "INFO"

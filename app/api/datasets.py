@@ -12,7 +12,18 @@ from app.api.deps import request_lang
 from app.database import get_db
 from app.i18n import render
 from app.errors import AppError, not_found
-from app.models import Alert, AlertRule, ConformanceRule, Dataset, Event, ImportFinding, QuarantinedRow
+from app.models import (
+    Alert,
+    AlertRule,
+    ConformanceRule,
+    Dataset,
+    Event,
+    ImportFinding,
+    MiningArtifact,
+    MiningRun,
+    QuarantinedRow,
+    ReferenceModel,
+)
 from app.schemas.datasets import DatasetOut, DatasetUpdate, FindingOut
 from app.services.cache import cache
 from app.services.exports import to_csv, to_json
@@ -80,6 +91,10 @@ def delete_dataset(dataset_id: int, confirm_name: str = Query(..., description="
     if confirm_name != ds.name:
         raise AppError(422, "confirmation_mismatch")
     upload_id = ds.upload_id
+    run_ids = select(MiningRun.id).where(MiningRun.dataset_id == ds.id)
+    db.execute(delete(MiningArtifact).where(MiningArtifact.run_id.in_(run_ids)))
+    db.execute(delete(MiningRun).where(MiningRun.dataset_id == ds.id))
+    db.execute(delete(ReferenceModel).where(ReferenceModel.dataset_id == ds.id))
     for model in (Alert, AlertRule, ConformanceRule, Event, ImportFinding, QuarantinedRow):
         db.execute(delete(model).where(model.dataset_id == ds.id))
     db.delete(ds)
