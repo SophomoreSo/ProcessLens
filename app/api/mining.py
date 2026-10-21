@@ -48,6 +48,7 @@ def _run(db: Session, run_id: str) -> MiningRun:
 @router.get("/mining/algorithms", summary="Algorithm registry with availability, parameters and limitations")
 def algorithms():
     return {"algorithms": [registry.describe(a) for a in registry.ALGORITHMS.values()],
+            "object_centric": [registry.describe(a) for a in registry.OC_ALGORITHMS.values()],
             "provider_versions": {"pm4py": registry.provider_version("pm4py")},
             "visualization_exports": {"png": {"available": True, "where": "browser (Cytoscape.js)"},
                                       "svg": {"available": False, "reason_key": "algo.unavailable.svg"}}}
@@ -125,11 +126,13 @@ def diagnostic_sleep(body: SleepRequest, ds: Dataset = Depends(get_dataset), db:
 
 
 @router.get("/mining/runs", summary="Run history (model/run provenance)")
-def list_runs(dataset_id: int | None = None, kind: list[str] = Query(default=[]), status: list[str] = Query(default=[]),
+def list_runs(dataset_id: int | None = None, ocel_log_id: int | None = None, kind: list[str] = Query(default=[]), status: list[str] = Query(default=[]),
               page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=200), db: Session = Depends(get_db)):
     q = select(MiningRun)
     if dataset_id is not None:
         q = q.where(MiningRun.dataset_id == dataset_id)
+    if ocel_log_id is not None:
+        q = q.where(MiningRun.ocel_log_id == ocel_log_id)
     if kind:
         q = q.where(MiningRun.kind.in_(kind))
     if status:

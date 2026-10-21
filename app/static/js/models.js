@@ -119,6 +119,51 @@ function tsElements(rep) {
   return els;
 }
 
+// Object types are told apart by colour (and listed in a legend next to the graph).
+export function typeColor(types, type) {
+  const vars = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--accent", "--warn", "--danger", "--ok"];
+  const i = Math.max(0, types.indexOf(type));
+  return cssVar(vars[i % vars.length]);
+}
+
+function ocpnElements(rep) {
+  const els = [];
+  for (const p of rep.places) {
+    const color = typeColor(rep.object_types, p.object_type);
+    els.push({ data: { id: p.id, kind: "place", label: p.source ? fmtInt(p.initial) : "", initial: p.source, final: p.sink, color,
+      tip: [[t("model.place"), p.name], [t("ocel.object_type"), p.object_type], [t("model.initial_tokens"), fmtInt(p.initial)],
+        [t("model.final_tokens"), fmtInt(p.final)]] } });
+  }
+  for (const tr of rep.transitions) {
+    els.push({ data: { id: tr.id, kind: tr.silent ? "silent" : "transition", label: tr.label || "τ",
+      tip: [[tr.silent ? t("model.silent_transition") : t("model.transition"), tr.label || "τ"]] } });
+  }
+  rep.arcs.forEach((a, i) => els.push({ data: { id: `a${i}`, source: a.source, target: a.target, label: "",
+    color: typeColor(rep.object_types, a.object_type), variable: a.variable,
+    tip: [[t("ocel.object_type"), a.object_type], [t("ocel.arc_kind"), a.variable ? t("ocel.variable_arc") : t("ocel.single_arc")]] } }));
+  return els;
+}
+
+function ocdfgElements(rep) {
+  const els = rep.nodes.map((nd) => ({ data: { id: `n:${nd.id}`, kind: "activity", label: `${nd.id}\n${fmtInt(nd.unique_events)}`,
+    tip: [[t("model.activity"), nd.id], [t("ocel.unique_events"), fmtInt(nd.unique_events)],
+      ...Object.entries(nd.per_type).map(([ty, c]) => [t("ocel.events_with_type", { type: ty }), fmtInt(c)])] } }));
+  rep.edges.forEach((e, i) => els.push({ data: { id: `e${i}`, source: `n:${e.source}`, target: `n:${e.target}`,
+    label: fmtInt(e.object_transitions), color: typeColor(rep.object_types, e.object_type),
+    tip: [[t("ocel.object_type"), e.object_type], [t("ocel.object_transitions"), fmtInt(e.object_transitions)],
+      [t("ocel.objects"), fmtInt(e.objects)], [t("ocel.unique_event_pairs"), fmtInt(e.unique_event_pairs)],
+      [t("ocel.median_elapsed"), fmtDur(e.median_elapsed_s)]] } }));
+  return els;
+}
+
+function colorStyle() {
+  return [
+    { selector: "node[color]", style: { "border-color": "data(color)" } },
+    { selector: "edge[color]", style: { "line-color": "data(color)", "target-arrow-color": "data(color)" } },
+    { selector: "edge[?variable]", style: { width: 4, "line-style": "solid", "line-opacity": 0.85 } },
+  ];
+}
+
 // --------------------------------------------------------------------------- graph view
 export class ModelGraph {
   constructor(container) {
@@ -139,8 +184,10 @@ export class ModelGraph {
     else if (rep.type === "heuristics_net") elements = heuristicsElements(rep);
     else if (rep.type === "bpmn") elements = bpmnElements(rep);
     else if (rep.type === "transition_system") elements = tsElements(rep);
+    else if (rep.type === "oc_petri_net") elements = ocpnElements(rep);
+    else if (rep.type === "object_centric_dfg") elements = ocdfgElements(rep);
     else return false;
-    this.cy = cytoscape({ container: this.container, elements, style: baseStyle(), layout: layout(rankDir),
+    this.cy = cytoscape({ container: this.container, elements, style: [...baseStyle(), ...colorStyle()], layout: layout(rankDir),
       wheelSensitivity: 0.25, minZoom: 0.1, maxZoom: 3 });
     const tip = document.getElementById("tooltip");
     this.cy.on("mouseover", "node, edge", (evt) => {
@@ -233,7 +280,7 @@ export function renderModel(host, rep, { height = 520 } = {}) {
   const prev = host._modelGraph;
   if (prev) prev.destroy();
   host._modelGraph = null;
-  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system"].includes(rep.type)) {
+  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system", "oc_petri_net", "object_centric_dfg"].includes(rep.type)) {
     const canvas = h("div", { class: "graph", style: { height: `${height}px` } });
     const controls = h("div", { class: "graph-controls" });
     clear(host, h("div", { class: "graph-wrap" }, canvas, controls));
@@ -245,6 +292,7 @@ export function renderModel(host, rep, { height = 520 } = {}) {
       h("button", { type: "button", title: t("proc.fit"), "aria-label": t("proc.fit"), onclick: () => g.fit() }, "⤢"));
     host._modelGraph = g;
     if (rep.type === "process_tree" && rep.text) host.append(h("p", { class: "small mono", style: { marginTop: "8px" } }, rep.text));
+    if (rep.object_types) host.append(typeLegend(rep.object_types, rep.type === "oc_petri_net"));
     return g;
   }
   if (rep.type === "powl") clear(host, h("div", { class: "powl" }, powlNode(rep.root)), h("p", { class: "small mono" }, rep.text));
@@ -253,6 +301,12 @@ export function renderModel(host, rep, { height = 520 } = {}) {
   else if (rep.type === "temporal_profile") clear(host, temporalView(rep));
   else clear(host, h("pre", {}, JSON.stringify(rep, null, 2)));
   return null;
+}
+
+export function typeLegend(types, arcs = false) {
+  return h("div", { class: "type-legend small" }, types.map((ty) => h("span", { class: "legend-item" },
+    h("i", { class: "swatch", style: { background: typeColor(types, ty) } }), ty)),
+  arcs ? h("span", { class: "muted" }, t("ocel.variable_arc_legend")) : null);
 }
 
 export function sizeText(type, size) {

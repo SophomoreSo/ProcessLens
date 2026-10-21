@@ -273,6 +273,34 @@ def create_test_sleep(db: Session, ds: Dataset, seconds: float, timeout_s: float
     return run
 
 
+def create_ocpn(db: Session, ocel_log, object_types: list[str] | None, raw_params: dict,
+                timeout_s: float | None = None, force: bool = False) -> tuple[MiningRun, bool]:
+    """Object-centric Petri net discovery on an OCEL log (optionally restricted to object types)."""
+    spec = registry.get("oc_petri_net")
+    av = registry.availability(spec)
+    if av["status"] != "available":
+        raise RunRequestError("run.err.algorithm_unavailable", algorithm=spec.id, reason_key=av["reason_key"])
+    if not ocel_log.counts.get("e2o"):
+        raise RunRequestError("ocel.err.empty_selection")
+    params = registry.validate_params(spec, raw_params)
+    request = {"ocel_version": ocel_log.version, "object_types": object_types, "ocel_sha256": ocel_log.source_sha256}
+    return _create(db, kind="ocpn", ds=None, view=None, algorithm_id=spec.id, params=params, request=request,
+                   key_inputs={"ocel_log_id": ocel_log.id, **request, "algorithm_id": spec.id, "params": params},
+                   timeout_s=_timeout(timeout_s), force=force, ocel_log_id=ocel_log.id)
+
+
+def delete_runs(db: Session, run_ids: list[str]) -> None:
+    """Delete runs and their artifacts (queued/running runs are cancelled first)."""
+    from sqlalchemy import delete
+
+    with _live_lock:
+        _cancel.update(run_ids)
+    if run_ids:
+        db.execute(delete(MiningArtifact).where(MiningArtifact.run_id.in_(run_ids)))
+        db.execute(delete(MiningRun).where(MiningRun.id.in_(run_ids)))
+        db.commit()
+
+
 # --------------------------------------------------------------------------- artifacts
 def _store_artifact(db: Session, run_id: str, name: str, media_type: str, content: str) -> None:
     existing = db.scalars(select(MiningArtifact).where(MiningArtifact.run_id == run_id, MiningArtifact.name == name)).first()

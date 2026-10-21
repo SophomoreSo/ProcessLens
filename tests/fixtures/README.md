@@ -27,3 +27,25 @@ Expected metrics (all asserted in `tests/test_metrics.py`):
 * total cost 73
 
 p90 uses linear interpolation: sorted values v, position 0.9·(n−1).
+
+# Object-centric fixture: `ocel_small.json` (OCEL 2.0 JSON)
+
+Orders o1 (items i1, i2) and o2 (item i3); packages p1 (i2, i3 — items of two
+different orders) and p2 (i1). Eight events:
+
+| Event | Type | Objects | cost |
+|---|---|---|---|
+| e1 | place order | o1, i1, i2 | 10 |
+| e2 | place order | o2, i3 | 10 |
+| e3–e5 | pick item | i1 / i2 / i3 | 1 each |
+| e6 | send package | p1, i2, i3 | 5 |
+| e7 | send package | p2, i1 | 5 |
+| e8 | deliver package | p1, i2, i3 | — |
+
+Expected (asserted in `tests/test_ocel.py`): 8 unique events, 7 objects,
+16 event-object relationships, 6 object-object relationships, 5 shared events,
+cost over unique events 33 (a per-relationship sum would give 78). OC-DFG for
+`item`: place order → pick item 3 object transitions, send package → deliver
+package 2 object transitions but only 1 unique event pair (e6 → e8). Flattening
+by `item`: 3 cases, 11 rows from 8 unique events (3 duplicated rows).
+Object o1 changes `status` from `placed` to `shipped`.

@@ -77,7 +77,17 @@ export class ApiError extends Error {
 export async function api(path, { method = "GET", body, form, params } = {}) {
   let url = path;
   if (params) {
-    const qs = params instanceof URLSearchParams ? params.toString() : new URLSearchParams(params).toString();
+    let qs;
+    if (params instanceof URLSearchParams) qs = params.toString();
+    else {
+      // Plain objects: skip null/undefined, repeat the key for array values.
+      const sp = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || v === null) continue;
+        for (const item of Array.isArray(v) ? v : [v]) sp.append(k, item);
+      }
+      qs = sp.toString();
+    }
     if (qs) url += (url.includes("?") ? "&" : "?") + qs;
   }
   const headers = { Accept: "application/json", "X-ProcessLens-Language": LANG };

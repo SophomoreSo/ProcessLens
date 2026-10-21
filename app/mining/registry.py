@@ -246,6 +246,24 @@ _ALGORITHMS: tuple[AlgorithmSpec, ...] = (
 
 ALGORITHMS: dict[str, AlgorithmSpec] = {a.id: a for a in _ALGORITHMS}
 
+OC_PETRI_NET = "oc_petri_net"
+# Object-centric algorithms take an OCEL log (never a flattened case log).
+OC_ALGORITHMS: dict[str, AlgorithmSpec] = {
+    "oc_petri_net": AlgorithmSpec(
+        id="oc_petri_net", name_key="algo.oc_petri_net.name", family="object_centric", provider="pm4py",
+        output_type=OC_PETRI_NET, input_types=("ocel",),
+        params=(
+            ParamSpec("inductive_miner_variant", "choice", "im", choices=("im", "imf", "imd"),
+                      help_key="algo.param.ocpn_variant"),
+            ParamSpec("noise_threshold", "float", None, 0.0, 1.0, help_key="algo.param.noise_threshold_im",
+                      only_with={"inductive_miner_variant": ("imf",)}),
+        ),
+        preconditions=("algo.pre.ocel_nonempty",),
+        limitations=("algo.lim.ocpn", "algo.lim.block_structured"),
+        exports=("json", "png"),
+    ),
+}
+
 
 @lru_cache
 def _module_available(module: str) -> bool:
@@ -277,7 +295,7 @@ def describe(spec: AlgorithmSpec) -> dict:
 
 
 def get(algorithm_id: str) -> AlgorithmSpec:
-    spec = ALGORITHMS.get(algorithm_id)
+    spec = ALGORITHMS.get(algorithm_id) or OC_ALGORITHMS.get(algorithm_id)
     if spec is None:
         raise KeyError(algorithm_id)
     return spec

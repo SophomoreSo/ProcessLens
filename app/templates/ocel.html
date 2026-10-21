@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.ocel') }}</h1>
+    <p>{{ t('ocel.intro') }}</p>
+  </div>
+</div>
+<section class="card">
+  <div class="grid-2">
+    <div>
+      <h2>{{ t('ocel.logs') }}</h2>
+      <div class="actions">
+        <select id="log-select" aria-label="{{ t('ocel.logs') }}"></select>
+        <button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>
+      </div>
+      <div id="log-info" class="small" style="margin-top:8px"></div>
+    </div>
+    <div>
+      <h2>{{ t('ocel.import') }}</h2>
+      <form id="upload-form" class="actions">
+        <input type="file" id="ocel-file" accept=".json,.jsonocel,application/json" required>
+        <button type="submit" class="btn btn-primary btn-sm">{{ t('ocel.upload') }}</button>
+        <button type="button" class="btn btn-sm" id="load-demo">{{ t('ocel.load_demo') }}</button>
+      </form>
+      <p class="small muted">{{ t('ocel.supported_constructs') }}</p>
+      <div id="upload-status"></div>
+    </div>
+  </div>
+</section>
+<div id="ocel-body" class="hidden">
+  <section class="card">
+    <h2>{{ t('ocel.object_type_filter') }}</h2>
+    <div id="type-filter" class="type-filter"></div>
+    <p class="small muted">{{ t('ocel.filter_note') }}</p>
+    <div id="kpis" class="kpis" style="margin-top:10px"></div>
+    <p class="small muted" style="margin-top:8px">{{ t('ocel.counting_note') }}</p>
+  </section>
+  <section class="card">
+    <div class="tabs" role="tablist" id="ocel-tabs">
+      <button type="button" class="tab" role="tab" data-tab="ocdfg">{{ t('ocel.tab.ocdfg') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="types">{{ t('ocel.tab.types') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="objects">{{ t('ocel.tab.objects') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="relations">{{ t('ocel.tab.relations') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="ocpn">{{ t('ocel.tab.ocpn') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="projection">{{ t('ocel.tab.projection') }}</button>
+    </div>
+    <div data-panel="ocdfg"><p class="small muted">{{ t('ocel.ocdfg_note') }}</p><div id="ocdfg-view"></div><div id="ocdfg-table" style="margin-top:10px"></div></div>
+    <div data-panel="types" class="hidden"><div id="types-view"></div></div>
+    <div data-panel="objects" class="hidden">
+      <div class="split">
+        <div>
+          <div class="actions">
+            <select id="obj-type"></select>
+            <input type="search" id="obj-search" placeholder="{{ t('ocel.search_object') }}">
+          </div>
+          <div id="objects-view" style="margin-top:8px"></div>
+        </div>
+        <div id="object-detail"><p class="muted small">{{ t('ocel.pick_object') }}</p></div>
+      </div>
+    </div>
+    <div data-panel="relations" class="hidden">
+      <label>{{ t('ocel.object_type') }}<select id="rel-type"></select></label>
+      <p class="small muted">{{ t('ocel.relations_note') }}</p>
+      <div id="relations-view"></div>
+    </div>
+    <div data-panel="ocpn" class="hidden">
+      <p class="small muted">{{ t('ocel.ocpn_note') }}</p>
+      <form id="ocpn-form" class="form-grid"></form>
+      <div class="actions" style="margin-top:8px"><button type="button" class="btn btn-primary" id="run-ocpn">{{ t('ocel.run_ocpn') }}</button></div>
+      <div id="ocpn-status" style="margin-top:10px"></div>
+      <div id="ocpn-view" style="margin-top:10px"></div>
+    </div>
+    <div data-panel="projection" class="hidden">
+      <p class="notice warn small">{{ t('ocel.projection_warning') }}</p>
+      <div class="form-grid">
+        <label>{{ t('ocel.object_type') }}<select id="proj-type"></select></label>
+        <label>{{ t('ocel.dataset_name') }}<input type="text" id="proj-name" maxlength="200"></label>
+      </div>
+      <div id="proj-preview" class="small" style="margin-top:8px"></div>
+      <label class="inline" style="margin-top:8px"><input type="checkbox" id="proj-ack"> {{ t('ocel.ack_flattening') }}</label>
+      <div class="actions" style="margin-top:8px"><button type="button" class="btn btn-primary" id="run-projection" disabled>{{ t('ocel.create_projection') }}</button></div>
+      <div id="proj-status" style="margin-top:10px"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "_cytoscape.html" %}
+<script type="module" src="{{ url_for('static', path='js/ocel.js') }}"></script>
+{% endblock %}

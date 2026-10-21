@@ -15,8 +15,8 @@ from tests.conftest import HAND_CHECK, HAND_MAPPING, HAND_OPTIONS, run_import
 
 LOCALES = PROJECT_ROOT / "app" / "i18n" / "locales"
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
-PAGES = ["/", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts", "/datasets", "/import",
-         "/settings"]
+PAGES = ["/", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts", "/discovery", "/compare",
+         "/ocel", "/datasets", "/import", "/settings"]
 
 
 def raw(lang: str) -> dict:
@@ -35,7 +35,7 @@ def used_keys() -> set[str]:
                                r'|run|ref|ocel|task|guide|entity)\.[a-z0-9_.]+)"', p.read_text()))
     from app.mining import registry as mining_registry
 
-    for spec in mining_registry.ALGORITHMS.values():
+    for spec in [*mining_registry.ALGORITHMS.values(), *mining_registry.OC_ALGORITHMS.values()]:
         keys |= {spec.name_key, *spec.preconditions, *spec.limitations}
         keys |= {p_.help_key for p_ in spec.params}
         if spec.unavailable_reason:
@@ -43,6 +43,9 @@ def used_keys() -> set[str]:
     keys |= {f"rule.type.{r}" for r in RULE_PARAM_MODELS} | {f"rule.help.{r}" for r in RULE_PARAM_MODELS}
     keys |= {f"conf.{s}.{k}" for s in ("start", "end") for k in ("ok", "bad", "tie_ok", "tie_bad", "tie_mixed")}
     keys |= {f"conf.dur.{a}{b}" for a in ("over", "within") for b in ("", "_open")}
+    from app.services import ocel as ocel_service
+
+    keys |= {f"ocel.finding.{c}" for c in re.findall(r'_finding\(findings, "\w+", "(\w+)"', Path(ocel_service.__file__).read_text())}
     keys |= {f"set.lang.{code}" for code in LANGUAGES}
     keys |= {f"set.motion.{m}{s}" for m in ("system", "on", "off") for s in ("", "_hint")}
     keys |= {f"completion.short.{m}" for m in ("none", "end_activity", "case_status")}

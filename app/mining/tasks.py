@@ -450,4 +450,35 @@ def sleep(payload: dict, report: Report) -> dict:
     return {"slept": seconds}
 
 
-TASKS = {"discover": discover, "evaluate": evaluate, "parse_model": parse_model, "sleep": sleep}
+# =========================================================================== object-centric Petri net
+def ocpn(payload: dict, report: Report) -> dict:
+    """Object-centric Petri net (van der Aalst & Berti) via PM4Py's verified implementation.
+
+    The OCEL is passed as unique events, objects and event-object relations;
+    shared events stay single events (PM4Py flattens per object type internally)."""
+    report("run.stage.loading_library")
+    import pm4py
+    from pm4py.objects.ocel.obj import OCEL
+
+    ev = payload["events"].rename(columns={"event_id": "ocel:eid", "event_type": "ocel:activity", "ts": "ocel:timestamp"})
+    ob = payload["objects"].rename(columns={"object_id": "ocel:oid", "object_type": "ocel:type"})
+    rel = payload["relations"].rename(columns={"event_id": "ocel:eid", "object_id": "ocel:oid", "qualifier": "ocel:qualifier",
+                                               "object_type": "ocel:type", "event_type": "ocel:activity",
+                                               "ts": "ocel:timestamp"})
+    if ev.empty or rel.empty:
+        raise TaskError("ocel.err.empty_selection")
+    log_ = OCEL(events=ev, objects=ob, relations=rel)
+    params = payload["params"]
+    report("run.stage.discovering")
+    t0 = time.perf_counter()
+    net = pm4py.discover_oc_petri_net(log_, inductive_miner_variant=params.get("inductive_miner_variant", "im"),
+                                      noise_threshold=float(params.get("noise_threshold") or 0.0))
+    seconds = time.perf_counter() - t0
+    report("run.stage.serializing")
+    rep = serialize.oc_petri_net(net)
+    return {"native_type": "oc_petri_net", "discovery_seconds": round(seconds, 4), "sizes": serialize.ocpn_size(rep),
+            "unique_events": int(len(ev)), "objects": int(len(ob)), "e2o_relationships": int(len(rel)),
+            "representation": rep}
+
+
+TASKS = {"discover": discover, "evaluate": evaluate, "parse_model": parse_model, "sleep": sleep, "ocpn": ocpn}

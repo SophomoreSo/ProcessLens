@@ -356,3 +356,14 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 .powl-op > b { color: var(--accent-2); }
 .powl-children { margin: 4px 0; padding-left: 22px; }
 .powl .step { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; }
+
+/* Object-centric pages */
+.type-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 8px; color: var(--text-muted); }
+.type-legend .legend-item { display: inline-flex; gap: 6px; align-items: center; }
+.type-legend .swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+.type-filter { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); }
+.timeline li { position: relative; padding: 6px 0 8px 10px; }
+.timeline li::before { content: ""; position: absolute; left: -21px; top: 11px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.obj-link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }

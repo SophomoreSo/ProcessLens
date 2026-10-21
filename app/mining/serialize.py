@@ -266,4 +266,43 @@ SIZE_FUNCTIONS = {
 
 
 def size_of(rep: dict) -> dict:
+    if rep["type"] == "oc_petri_net":
+        return ocpn_size(rep)
     return SIZE_FUNCTIONS[rep["type"]](rep)
+
+
+# --------------------------------------------------------------------------- object-centric Petri net
+def oc_petri_net(ocpn) -> dict:
+    """Serialize PM4Py's OCPetriNet. Markings are reported as token counts per place (object ids omitted)."""
+    im, fm = ocpn.initial_marking, ocpn.final_marking
+    places = sorted(ocpn.places, key=lambda p: (p.object_type, p not in im, p in fm, p.name))
+    pid = {p: f"p{i}" for i, p in enumerate(places)}
+
+    def t_key(t):
+        ins = sorted(a.source.name for a in t.in_arcs)
+        outs = sorted(a.target.name for a in t.out_arcs)
+        return (t.label is None, t.label or "", ins, outs)
+
+    transitions = sorted(ocpn.transitions, key=t_key)
+    tid = {t: f"t{i}" for i, t in enumerate(transitions)}
+    ids = {**pid, **tid}
+    arcs = sorted(({"source": ids[a.source], "target": ids[a.target], "object_type": a.object_type,
+                    "variable": bool(a.is_variable), "weight": int(a.weight)} for a in ocpn.arcs),
+                  key=lambda a: (a["source"], a["target"]))
+    return {
+        "type": "oc_petri_net",
+        "object_types": sorted(ocpn.object_types),
+        "places": [{"id": pid[p], "name": p.name, "object_type": p.object_type,
+                    "initial": int(sum(im[p].values())) if p in im else 0,
+                    "final": int(sum(fm[p].values())) if p in fm else 0,
+                    "source": p in im, "sink": p in fm} for p in places],
+        "transitions": [{"id": tid[t], "label": t.label, "silent": t.label is None} for t in transitions],
+        "arcs": arcs,
+    }
+
+
+def ocpn_size(rep: dict) -> dict:
+    visible = sum(1 for t in rep["transitions"] if not t["silent"])
+    return {"object_types": len(rep["object_types"]), "places": len(rep["places"]),
+            "transitions": len(rep["transitions"]), "visible_transitions": visible,
+            "variable_arcs": sum(1 for a in rep["arcs"] if a["variable"]), "arcs": len(rep["arcs"])}

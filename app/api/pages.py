@@ -30,6 +30,8 @@ PAGES = [
     ("|", "mining"),
     ("discovery", "/discovery"),
     ("compare", "/compare"),
+    ("|", "beyond"),
+    ("ocel", "/ocel"),
     ("|", "data"),
     ("datasets", "/datasets"),
     ("import", "/import"),

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
-from app.api import alerts, analytics, conformance, datasets, exports, imports, meta, mining, pages, preferences
+from app.api import alerts, analytics, conformance, datasets, exports, imports, meta, mining, ocel, pages, preferences
 from app.config import PROJECT_ROOT, get_settings
 from app.database import init_engine
 from app.errors import install_error_handlers
@@ -57,7 +57,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "app" / "static")), name="static")
-    for module in (meta, preferences, imports, datasets, analytics, conformance, alerts, exports, mining):
+    for module in (meta, preferences, imports, datasets, analytics, conformance, alerts, exports, mining, ocel):
         app.include_router(module.router)
     app.include_router(conformance.summary_router)
     app.include_router(pages.router)

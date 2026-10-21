@@ -1,0 +1,328 @@
+{
+ "objectTypes": [
+  {
+   "name": "order",
+   "attributes": [
+    {
+     "name": "status",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "item",
+   "attributes": [
+    {
+     "name": "product",
+     "type": "string"
+    }
+   ]
+  },
+  {
+   "name": "package",
+   "attributes": []
+  }
+ ],
+ "eventTypes": [
+  {
+   "name": "place order",
+   "attributes": [
+    {
+     "name": "cost",
+     "type": "float"
+    }
+   ]
+  },
+  {
+   "name": "pick item",
+   "attributes": [
+    {
+     "name": "cost",
+     "type": "float"
+    }
+   ]
+  },
+  {
+   "name": "send package",
+   "attributes": [
+    {
+     "name": "cost",
+     "type": "float"
+    }
+   ]
+  },
+  {
+   "name": "deliver package",
+   "attributes": []
+  }
+ ],
+ "objects": [
+  {
+   "id": "o1",
+   "type": "order",
+   "attributes": [
+    {
+     "name": "status",
+     "time": "2024-01-01T08:00:00Z",
+     "value": "placed"
+    },
+    {
+     "name": "status",
+     "time": "2024-01-02T09:00:00Z",
+     "value": "shipped"
+    }
+   ]
+  },
+  {
+   "id": "o2",
+   "type": "order",
+   "attributes": [
+    {
+     "name": "status",
+     "time": "2024-01-01T09:00:00Z",
+     "value": "placed"
+    }
+   ]
+  },
+  {
+   "id": "i1",
+   "type": "item",
+   "attributes": [
+    {
+     "name": "product",
+     "time": "1970-01-01T00:00:00Z",
+     "value": "pen"
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "o1",
+     "qualifier": "part of"
+    }
+   ]
+  },
+  {
+   "id": "i2",
+   "type": "item",
+   "attributes": [
+    {
+     "name": "product",
+     "time": "1970-01-01T00:00:00Z",
+     "value": "ink"
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "o1",
+     "qualifier": "part of"
+    }
+   ]
+  },
+  {
+   "id": "i3",
+   "type": "item",
+   "attributes": [
+    {
+     "name": "product",
+     "time": "1970-01-01T00:00:00Z",
+     "value": "pad"
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "o2",
+     "qualifier": "part of"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "type": "package",
+   "relationships": [
+    {
+     "objectId": "i2",
+     "qualifier": "contains"
+    },
+    {
+     "objectId": "i3",
+     "qualifier": "contains"
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "type": "package",
+   "relationships": [
+    {
+     "objectId": "i1",
+     "qualifier": "contains"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "id": "e1",
+   "type": "place order",
+   "time": "2024-01-01T08:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 10
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "o1",
+     "qualifier": "order"
+    },
+    {
+     "objectId": "i1",
+     "qualifier": "item"
+    },
+    {
+     "objectId": "i2",
+     "qualifier": "item"
+    }
+   ]
+  },
+  {
+   "id": "e2",
+   "type": "place order",
+   "time": "2024-01-01T09:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 10
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "o2",
+     "qualifier": "order"
+    },
+    {
+     "objectId": "i3",
+     "qualifier": "item"
+    }
+   ]
+  },
+  {
+   "id": "e3",
+   "type": "pick item",
+   "time": "2024-01-01T10:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 1
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "i1",
+     "qualifier": ""
+    }
+   ]
+  },
+  {
+   "id": "e4",
+   "type": "pick item",
+   "time": "2024-01-01T11:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 1
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "i2",
+     "qualifier": ""
+    }
+   ]
+  },
+  {
+   "id": "e5",
+   "type": "pick item",
+   "time": "2024-01-01T12:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 1
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "i3",
+     "qualifier": ""
+    }
+   ]
+  },
+  {
+   "id": "e6",
+   "type": "send package",
+   "time": "2024-01-02T08:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 5
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "p1",
+     "qualifier": "package"
+    },
+    {
+     "objectId": "i2",
+     "qualifier": "item"
+    },
+    {
+     "objectId": "i3",
+     "qualifier": "item"
+    }
+   ]
+  },
+  {
+   "id": "e7",
+   "type": "send package",
+   "time": "2024-01-02T09:00:00Z",
+   "attributes": [
+    {
+     "name": "cost",
+     "value": 5
+    }
+   ],
+   "relationships": [
+    {
+     "objectId": "p2",
+     "qualifier": "package"
+    },
+    {
+     "objectId": "i1",
+     "qualifier": "item"
+    }
+   ]
+  },
+  {
+   "id": "e8",
+   "type": "deliver package",
+   "time": "2024-01-03T08:00:00Z",
+   "attributes": [],
+   "relationships": [
+    {
+     "objectId": "p1",
+     "qualifier": "package"
+    },
+    {
+     "objectId": "i2",
+     "qualifier": "item"
+    },
+    {
+     "objectId": "i3",
+     "qualifier": "item"
+    }
+   ]
+  }
+ ]
+}
