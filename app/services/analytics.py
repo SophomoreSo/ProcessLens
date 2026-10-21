@@ -13,6 +13,7 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 
+from app.i18n import t
 from app.schemas.filters import END_MARKER, START_MARKER
 from app.services.cache import cache
 from app.services.eventlog import EventLog
@@ -176,12 +177,7 @@ def process_graph(view: FilteredView) -> dict:
             "nodes": nodes_out,
             "edges": edges_out,
             "markers": {"start": START_MARKER, "end": END_MARKER},
-            "notes": [
-                "Directly-follows graph: an edge A→B means B was the next recorded event after A in the same case.",
-                "It is not a BPMN model and does not show causality, concurrency or decision logic.",
-                "Elapsed time is the difference between consecutive event timestamps; it can include waiting and "
-                "processing and is not labeled as either.",
-            ],
+            "note_keys": ["note.dfg.edge", "note.dfg.not_bpmn", "note.dfg.elapsed"],
         }
 
     return _cached(view, "graph", compute)
@@ -333,12 +329,7 @@ def performance(view: FilteredView) -> dict:
             "departments": _participation_stats(view, "department") if view.log.has_department else [],
             "activity_execution": activity_exec,
             "has_start_timestamps": view.log.has_start_ts,
-            "notes": [
-                "Transition times are elapsed times between consecutive events (may include waiting and work).",
-                "Resource/department 'elapsed before event' is the time from the preceding event in the same case "
-                "to an event performed by that resource/department.",
-                "Comparisons are descriptive associations within the selected population, not proof of root causes.",
-            ],
+            "note_keys": ["note.perf.transitions", "note.perf.participation", "note.perf.descriptive"],
         }
 
     return _cached(view, "performance", compute)
@@ -375,12 +366,15 @@ def compare_cohorts(base: FilteredView, a: FilteredView, b: FilteredView) -> dic
         "a": cohort_metrics(a, edges),
         "b": cohort_metrics(b, edges),
         "overlapping_cases": overlap,
-        "notes": [
-            "Both cohorts are drawn from the population selected by the global filters.",
-            "Differences are descriptive associations and do not establish causes.",
-            "Small cohorts produce unstable medians and p90 values; check the case counts.",
-        ],
+        "note_keys": ["note.cmp.population", "note.cmp.descriptive", "note.cmp.small"],
     }
+
+
+def with_notes(data: dict, lang: str) -> dict:
+    """Copy of a (possibly cached) result with its note keys rendered in ``lang``."""
+    out = dict(data)
+    out["notes"] = [t(lang, k) for k in data.get("note_keys", [])]
+    return out
 
 
 def log_capabilities(log: EventLog) -> dict:

@@ -251,3 +251,86 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
   .topbar, .content { padding-left: 16px; padding-right: 16px; }
   .graph { height: 460px; }
 }
+
+/* ===================================================================
+   Motion. Everything below applies only while animations are active
+   (Settings → Animations; "system" follows prefers-reduced-motion).
+   =================================================================== */
+:root { --ease-out: cubic-bezier(.2, .7, .2, 1); --ease-spring: cubic-bezier(.34, 1.4, .64, 1); }
+
+:root[data-motion-active="false"] *, :root[data-motion-active="false"] *::before,
+:root[data-motion-active="false"] *::after, :root[data-motion-active="false"] ::backdrop {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@keyframes pl-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes pl-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pl-pop { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes pl-slide-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes pl-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes pl-pulse { 0% { transform: scale(1); } 40% { transform: scale(1.55); } 100% { transform: scale(1); } }
+@keyframes pl-stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+@keyframes pl-badge-pop { 0% { transform: scale(.4); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes pl-dash { to { stroke-dashoffset: 0; } }
+
+:root[data-motion-active="true"] {
+  scroll-behavior: smooth;
+}
+/* Page entrance: heading, then content blocks in sequence. */
+:root[data-motion-active="true"] .content > * { animation: pl-rise .45s var(--ease-out) both; }
+:root[data-motion-active="true"] .content > :nth-child(2) { animation-delay: 50ms; }
+:root[data-motion-active="true"] .content > :nth-child(3) { animation-delay: 100ms; }
+:root[data-motion-active="true"] .content > :nth-child(4) { animation-delay: 150ms; }
+:root[data-motion-active="true"] .content > :nth-child(n+5) { animation-delay: 200ms; }
+/* Staggered reveal of freshly rendered blocks (core.reveal). */
+:root[data-motion-active="true"] .anim-in { animation: pl-rise .5s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+:root[data-motion-active="true"] .state { animation: pl-fade .3s ease both; }
+
+/* Hover and press feedback */
+:root[data-motion-active="true"] .card,
+:root[data-motion-active="true"] .kpi { transition: transform .22s var(--ease-out), box-shadow .22s ease, border-color .22s ease; }
+:root[data-motion-active="true"] .kpi:hover { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(16, 24, 32, .12); border-color: var(--accent); }
+:root[data-motion-active="true"] button,
+:root[data-motion-active="true"] .btn { transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s ease; }
+:root[data-motion-active="true"] button:active:not(:disabled),
+:root[data-motion-active="true"] .btn:active { transform: scale(.96); }
+:root[data-motion-active="true"] .nav a { transition: background-color .18s ease, color .18s ease, padding-left .18s var(--ease-out); }
+:root[data-motion-active="true"] .nav a:hover { padding-left: 14px; }
+:root[data-motion-active="true"] tbody tr { transition: background-color .15s ease; }
+:root[data-motion-active="true"] input, :root[data-motion-active="true"] select { transition: border-color .15s ease, box-shadow .15s ease; }
+
+/* Components */
+:root[data-motion-active="true"] .chip { animation: pl-pop .25s var(--ease-spring) both; }
+:root[data-motion-active="true"] .nav-badge:not(.hidden) { animation: pl-badge-pop .4s var(--ease-spring) both; }
+:root[data-motion-active="true"] .bar > i { transform-origin: left center; animation: pl-grow-x .7s var(--ease-out) both; }
+:root[data-motion-active="true"] .progress > i { transition: width .35s var(--ease-out);
+  background-image: linear-gradient(45deg, rgba(255,255,255,.22) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.22) 50%, rgba(255,255,255,.22) 75%, transparent 75%);
+  background-size: 28px 28px; animation: pl-stripes .8s linear infinite; }
+:root[data-motion-active="true"] .toast { animation: pl-slide-in .3s var(--ease-out) both; }
+:root[data-motion-active="true"] dialog[open] { animation: pl-pop .22s var(--ease-out) both; }
+:root[data-motion-active="true"] dialog[open]::backdrop { animation: pl-fade .22s ease both; }
+:root[data-motion-active="true"] .tooltip:not(.hidden) { animation: pl-fade .12s ease both; }
+:root[data-motion-active="true"] .timeline li { animation: pl-rise .4s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 35ms); }
+:root[data-motion-active="true"] .seq .step { transition: transform .15s ease; }
+:root[data-motion-active="true"] .seq .step:hover { transform: translateY(-1px); }
+
+/* Brand mark: the process dots pulse once and the flow line draws itself on page load. */
+:root[data-motion-active="true"] .brand-dot { transform-box: fill-box; transform-origin: center; animation: pl-pulse .7s ease-out both; }
+:root[data-motion-active="true"] .brand-dot.d2 { animation-delay: .15s; }
+:root[data-motion-active="true"] .brand-dot.d3 { animation-delay: .3s; }
+:root[data-motion-active="true"] .brand-flow { stroke-dasharray: 14; stroke-dashoffset: 14; animation: pl-dash .6s ease-out .1s forwards; }
+:root[data-motion-active="true"] .brand:hover .brand-mark { transform: rotate(-8deg); }
+:root[data-motion-active="true"] .brand-mark { transition: transform .3s var(--ease-spring); }
+
+/* Settings page preview */
+.motion-preview { display: flex; gap: 10px; align-items: center; }
+.motion-preview .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+:root[data-motion-active="true"] .motion-preview .dot { animation: pl-pulse 1.4s ease-in-out infinite; }
+:root[data-motion-active="true"] .motion-preview .dot:nth-child(2) { animation-delay: .2s; background: var(--accent-2); }
+:root[data-motion-active="true"] .motion-preview .dot:nth-child(3) { animation-delay: .4s; }
+.settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; color: var(--text); }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice small { display: block; color: var(--text-muted); }

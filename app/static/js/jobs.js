@@ -1,9 +1,9 @@
-import { api, clear, h } from "./core.js";
+import { api, clear, h, t } from "./core.js";
 
 /** Poll an import job until it finishes, rendering progress into ``el``. */
 export async function followJob(jobId, el) {
   const bar = h("i", { style: { width: "0%" } });
-  const stage = h("span", {}, "Queued");
+  const stage = h("span", {}, t("job.queued"));
   clear(el, h("div", { class: "notice info" }, h("div", { class: "actions" }, h("span", { class: "spinner" }), stage),
     h("div", { class: "progress", style: { marginTop: "8px" }, role: "progressbar" }, bar)));
   for (;;) {

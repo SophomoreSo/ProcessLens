@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from app.i18n import t
 from app.schemas.imports import ColumnMapping, TimestampOptions
 from app.services.ingestion import RawTable
 
@@ -152,25 +153,29 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
     severities: dict[str, str] = {}
     rows = raw["__row"].to_numpy()
 
-    def add(severity: str, code: str, message: str, row=None, fld=None, case_id=None, value=None):
+    def add(severity: str, code: str, params: dict | None = None, row=None, fld=None, case_id=None, value=None):
+        """Record a finding. Its message is the catalog entry ``finding.<code>`` rendered with ``params``."""
         counts[code] += 1
         severities[code] = severity
         if severity == "error" and row is not None:
             invalid.setdefault(int(row), []).append(code)
         if max_findings is None or len(findings) < max_findings or severity == "error" and row is None:
-            findings.append({"severity": severity, "code": code, "message": message, "row": None if row is None else int(row),
-                             "field": fld, "case_id": case_id, "value": _trunc(value)})
+            key = f"finding.{code}"
+            findings.append({"severity": severity, "code": code, "message": t("en", key, **(params or {})),
+                             "message_key": key, "message_params": params or {},
+                             "row": None if row is None else int(row), "field": fld, "case_id": case_id,
+                             "value": _trunc(value)})
 
-    def add_rows(mask: np.ndarray, severity: str, code: str, message: str, fld: str, values: pd.Series | None):
+    def add_rows(mask: np.ndarray, severity: str, code: str, params: dict | None, fld: str, values: pd.Series | None):
         idx = np.flatnonzero(mask)
         for i in idx:
-            add(severity, code, message, row=rows[i], fld=fld, value=None if values is None else values.iat[i])
+            add(severity, code, params, row=rows[i], fld=fld, value=None if values is None else values.iat[i])
 
     # --- structural problems -------------------------------------------------
     for r, (exp, act) in sorted(table.field_count_issues.items()):
-        add("error", "field_count_mismatch", f"Row has {act} fields; the header defines {exp}.", row=r)
+        add("error", "field_count_mismatch", {"actual": act, "expected": exp}, row=r)
     if table.blank_lines:
-        add("info", "blank_lines_skipped", f"{table.blank_lines} completely blank line(s) were skipped (not data rows).")
+        add("info", "blank_lines_skipped", {"count": table.blank_lines})
 
     def col(fld: str) -> pd.Series | None:
         c = getattr(mapping, fld)
@@ -187,31 +192,27 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
     # --- required fields --------------------------------------------------------
     case_raw = col("case_id")
     case = clean(case_raw)
-    add_rows((case == "").to_numpy(), "error", "missing_case_id", "Case ID is empty.", mapping.case_id, None)
+    add_rows((case == "").to_numpy(), "error", "missing_case_id", None, mapping.case_id, None)
 
     act_raw = col("activity")
     activity = clean(act_raw)
-    add_rows((activity == "").to_numpy(), "error", "empty_activity", "Activity is empty.", mapping.activity, None)
+    add_rows((activity == "").to_numpy(), "error", "empty_activity", None, mapping.activity, None)
 
     ts, ts_code = parse_timestamps(col("timestamp"), ts_opts)
     ts_raw = col("timestamp")
-    add_rows((ts_code == "missing").to_numpy(), "error", "missing_timestamp", "Timestamp is empty.", mapping.timestamp, None)
+    add_rows((ts_code == "missing").to_numpy(), "error", "missing_timestamp", None, mapping.timestamp, None)
     add_rows((ts_code == "malformed").to_numpy(), "error", "malformed_timestamp",
-             f"Timestamp does not match format '{ts_opts.format}'.", mapping.timestamp, ts_raw)
+             {"format": ts_opts.format}, mapping.timestamp, ts_raw)
     add_rows((ts_code == "ambiguous").to_numpy(), "error", "ambiguous_local_time",
-             f"Local time occurs twice in {ts_opts.source_timezone} (DST change). Choose an ambiguous-time policy "
-             "('earliest' or 'latest') to import it.", mapping.timestamp, ts_raw)
+             {"timezone": ts_opts.source_timezone}, mapping.timestamp, ts_raw)
     add_rows((ts_code == "nonexistent").to_numpy(), "error", "nonexistent_local_time",
-             f"Local time does not exist in {ts_opts.source_timezone} (DST change). Choose a nonexistent-time policy "
-             "('shift_forward' or 'shift_backward') to import it.", mapping.timestamp, ts_raw)
+             {"timezone": ts_opts.source_timezone}, mapping.timestamp, ts_raw)
     n_amb_res = int((ts_code == "ambiguous_resolved").sum())
     n_non_res = int((ts_code == "nonexistent_resolved").sum())
     if n_amb_res:
-        add("warning", "ambiguous_time_resolved",
-            f"{n_amb_res} ambiguous local timestamp(s) resolved using policy '{ts_opts.ambiguous_policy}'.")
+        add("warning", "ambiguous_time_resolved", {"count": n_amb_res, "policy": ts_opts.ambiguous_policy})
     if n_non_res:
-        add("warning", "nonexistent_time_resolved",
-            f"{n_non_res} nonexistent local timestamp(s) shifted using policy '{ts_opts.nonexistent_policy}'.")
+        add("warning", "nonexistent_time_resolved", {"count": n_non_res, "policy": ts_opts.nonexistent_policy})
 
     # --- optional fields --------------------------------------------------------
     start_ts = pd.Series(pd.NaT, index=raw.index, dtype="datetime64[us, UTC]")
@@ -219,26 +220,23 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
         st, st_code = parse_timestamps(col("start_timestamp"), ts_opts)
         st_raw = col("start_timestamp")
         add_rows((st_code == "malformed").to_numpy(), "error", "malformed_start_timestamp",
-                 f"Start timestamp does not match format '{ts_opts.format}'.", mapping.start_timestamp, st_raw)
-        add_rows(st_code.isin(["ambiguous", "nonexistent"]).to_numpy(), "error", "dst_start_timestamp",
-                 "Start timestamp is ambiguous or nonexistent in the source timezone; choose a DST policy.",
+                 {"format": ts_opts.format}, mapping.start_timestamp, st_raw)
+        add_rows(st_code.isin(["ambiguous", "nonexistent"]).to_numpy(), "error", "dst_start_timestamp", None,
                  mapping.start_timestamp, st_raw)
         start_ts = st
         later = (start_ts.notna() & ts.notna() & (start_ts > ts)).to_numpy()
-        add_rows(later, "error", "start_after_end", "Start timestamp is later than the completion timestamp.",
-                 mapping.start_timestamp, st_raw)
+        add_rows(later, "error", "start_after_end", None, mapping.start_timestamp, st_raw)
 
     cost = pd.Series(np.nan, index=raw.index, dtype="float64")
     if mapping.cost:
         cost_raw = clean(col("cost"))
         num = pd.to_numeric(cost_raw.where(cost_raw != ""), errors="coerce")
         bad = ((cost_raw != "") & (num.isna() | ~np.isfinite(num.fillna(0)))).to_numpy()
-        add_rows(bad, "error", "invalid_cost", "Cost is not a finite number (use '.' as decimal separator, no currency symbols).",
-                 mapping.cost, cost_raw)
+        add_rows(bad, "error", "invalid_cost", None, mapping.cost, cost_raw)
         cost = num.where(~pd.Series(bad, index=raw.index))
         neg = (cost < 0).to_numpy()
         if neg.any():
-            add("warning", "negative_cost", f"{int(neg.sum())} row(s) have a negative cost (kept as-is).", fld=mapping.cost)
+            add("warning", "negative_cost", {"count": int(neg.sum())}, fld=mapping.cost)
 
     event_id = None
     if mapping.event_id:
@@ -246,10 +244,10 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
         nonempty = event_id != ""
         dup = (nonempty & event_id.duplicated(keep=False)).to_numpy()
         add_rows(dup, "error", "duplicate_event_id",
-                 "Event ID is used by more than one row; all rows sharing it are flagged.", mapping.event_id, event_id)
+                 None, mapping.event_id, event_id)
         n_empty = int((~nonempty).sum())
         if n_empty:
-            add("info", "missing_event_id", f"{n_empty} row(s) have no event ID (optional field).", fld=mapping.event_id)
+            add("info", "missing_event_id", {"count": n_empty}, fld=mapping.event_id)
 
     def optional_text(fld: str) -> pd.Series | None:
         s = col(fld)
@@ -263,7 +261,7 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
     case_status = optional_text("case_status")
 
     if trimmed_count:
-        add("info", "whitespace_trimmed", f"Leading/trailing whitespace was trimmed from {trimmed_count} value(s).")
+        add("info", "whitespace_trimmed", {"count": trimmed_count})
 
     # --- assemble valid rows ----------------------------------------------------
     invalid_mask = raw["__row"].isin(list(invalid.keys())).to_numpy()
@@ -298,15 +296,12 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
         if tied.any():
             per_case = norm[tied].groupby("case_id").size()
             tie_cases = len(per_case)
-            add("warning", "timestamp_ties",
-                f"{tie_cases} case(s) contain events with identical timestamps ({int(tied.sum())} events). "
-                "They are ordered by source row, which does not establish a reliable causal order.")
+            add("warning", "timestamp_ties", {"cases": tie_cases, "events": int(tied.sum())})
             for cid, cnt in per_case.head(max_findings or len(per_case)).items():
-                add("warning", "timestamp_tie_case", f"{cnt} events share a timestamp with another event in this case.",
-                    case_id=str(cid))
+                add("warning", "timestamp_tie_case", {"count": int(cnt)}, case_id=str(cid))
 
     if n == 0:
-        add("error", "no_data_rows", "The file contains a header but no data rows.")
+        add("error", "no_data_rows")
 
     findings.sort(key=lambda f: ({"error": 0, "warning": 1, "info": 2}[f["severity"]], f["row"] or 0))
     return ValidationResult(norm, findings, invalid, raw, n, counts, severities, tie_cases)

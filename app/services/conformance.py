@@ -39,100 +39,106 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+from app.i18n import join_or, msg, t
 from app.models import ConformanceRule
 from app.services.cache import cache
 from app.services.eventlog import EventLog
 
 COMPLIANT, VIOLATING, NOT_EVALUABLE = "compliant", "violating", "not_evaluable"
+Explained = tuple[str, str, dict]  # (result, message key, message params)
 
 
-def describe_rule(rule_type: str, p: dict) -> str:
+def describe_rule(rule_type: str, p: dict, lang: str = "en") -> str:
     if rule_type == "required_activity":
-        return f"'{p['activity']}' must occur"
+        return t(lang, "rule.desc.required_activity", activity=p["activity"])
     if rule_type == "forbidden_activity":
-        return f"'{p['activity']}' must not occur"
+        return t(lang, "rule.desc.forbidden_activity", activity=p["activity"])
     if rule_type == "precedence":
-        return f"'{p['activity_a']}' must precede every '{p['activity_b']}'"
+        return t(lang, "rule.desc.precedence", a=p["activity_a"], b=p["activity_b"])
     if rule_type == "max_duration":
-        label = "completed throughput" if p["metric"] == "completed_throughput" else "observed duration"
-        return f"{label} must be at most {p['max_hours']:g} h"
+        key = "rule.desc.max_throughput" if p["metric"] == "completed_throughput" else "rule.desc.max_observed"
+        return t(lang, key, hours=float(p["max_hours"]))
     if rule_type == "max_occurrences":
-        return f"'{p['activity']}' may occur at most {p['max_count']} time(s)"
+        return t(lang, "rule.desc.max_occurrences", activity=p["activity"], max=p["max_count"])
     if rule_type == "start_activity":
-        return "case must start with " + " or ".join(f"'{a}'" for a in p["activities"])
+        return t(lang, "rule.desc.start_activity", activities=join_or(lang, p["activities"]))
     if rule_type == "end_activity":
-        return "case must end with " + " or ".join(f"'{a}'" for a in p["activities"])
+        return t(lang, "rule.desc.end_activity", activities=join_or(lang, p["activities"]))
     return rule_type
 
 
-def _hours(seconds: float) -> str:
-    return f"{seconds / 3600:.1f} h"
+def _h(seconds: float) -> str:
+    return f"{seconds / 3600:.1f}"
 
 
-def _boundary_check(acts: np.ndarray, ts: np.ndarray, allowed: set[str], at_end: bool, what: str) -> tuple[str, str]:
+def _boundary_check(acts: np.ndarray, ts: np.ndarray, allowed: set[str], at_end: bool) -> Explained:
+    side = "end" if at_end else "start"
     edge_ts = ts[-1] if at_end else ts[0]
     tied = acts[ts == edge_ts]
     if len(tied) > 1:
+        names = ", ".join(map(str, tied))
         inside = [a in allowed for a in tied]
         if all(inside):
-            return COMPLIANT, f"All {len(tied)} events at the {what} timestamp are allowed ({', '.join(map(str, tied))})."
+            return COMPLIANT, f"conf.{side}.tie_ok", {"count": len(tied), "activities": names}
         if not any(inside):
-            return VIOLATING, f"The {what} event(s) {', '.join(map(str, tied))} are not allowed."
-        return NOT_EVALUABLE, (f"{len(tied)} events share the {what} timestamp ({', '.join(map(str, tied))}); "
-                               "their order cannot be established.")
-    act = acts[-1] if at_end else acts[0]
+            return VIOLATING, f"conf.{side}.tie_bad", {"activities": names}
+        return NOT_EVALUABLE, f"conf.{side}.tie_mixed", {"count": len(tied), "activities": names}
+    act = str(acts[-1] if at_end else acts[0])
     if act in allowed:
-        return COMPLIANT, f"The case {'ends' if at_end else 'starts'} with '{act}'."
-    return VIOLATING, f"The case {'ends' if at_end else 'starts'} with '{act}'."
+        return COMPLIANT, f"conf.{side}.ok", {"activity": act}
+    return VIOLATING, f"conf.{side}.bad", {"activity": act}
 
 
-def _precedence(acts: np.ndarray, ts: np.ndarray, a: str, b: str, complete: bool) -> tuple[str, str]:
+def _precedence(acts: np.ndarray, ts: np.ndarray, a: str, b: str, complete: bool) -> Explained:
     a_ts = ts[acts == a]
     b_idx = np.flatnonzero(acts == b)
     if len(b_idx) == 0:
         if complete:
-            return COMPLIANT, f"'{b}' does not occur (rule vacuously satisfied)."
+            return COMPLIANT, "conf.prec.vacuous", {"b": b}
         if len(a_ts):
-            return COMPLIANT, f"'{a}' already occurred and '{b}' has not occurred yet."
-        return NOT_EVALUABLE, f"Neither '{a}' nor '{b}' occurred yet and the case is not known to be complete."
+            return COMPLIANT, "conf.prec.a_done", {"a": a, "b": b}
+        return NOT_EVALUABLE, "conf.prec.none_yet", {"a": a, "b": b}
     uncertain = 0
-    for i in b_idx:
+    for n, i in enumerate(b_idx, start=1):
         tb = ts[i]
         if (a_ts < tb).any():
             continue
         if (a_ts == tb).any():
             uncertain += 1
             continue
-        return VIOLATING, f"'{b}' (occurrence {list(b_idx).index(i) + 1}) has no earlier '{a}'."
+        return VIOLATING, "conf.prec.violation", {"a": a, "b": b, "occurrence": n}
     if uncertain:
-        return NOT_EVALUABLE, (f"{uncertain} occurrence(s) of '{b}' share a timestamp with '{a}'; "
-                               "order cannot be established.")
-    return COMPLIANT, f"Every '{b}' ({len(b_idx)}) is preceded by '{a}'."
+        return NOT_EVALUABLE, "conf.prec.tie", {"a": a, "b": b, "count": uncertain}
+    return COMPLIANT, "conf.prec.ok", {"a": a, "b": b, "count": len(b_idx)}
 
 
 def evaluate(log: EventLog, rule_type: str, params: dict) -> pd.DataFrame:
-    """Evaluate a rule over every case of the log. Returns columns result, explanation."""
+    """Evaluate a rule over every case. Columns: result, key, params (a translatable explanation)."""
     cases, ev = log.cases, log.events
     n = len(cases)
     results = np.empty(n, dtype=object)
-    expl = np.empty(n, dtype=object)
+    keys = np.empty(n, dtype=object)
+    margs = np.empty(n, dtype=object)
     status = cases["status"].to_numpy()
     assume = bool(params.get("assume_complete", False))
     complete = (status == "completed") | assume
-    open_note = "the case is not known to be complete"
+
+    def out() -> pd.DataFrame:
+        return pd.DataFrame({"result": results, "key": keys, "params": margs}, index=cases.index)
 
     if rule_type == "max_duration":
         limit = params["max_hours"] * 3600
         dur = cases["duration_s"].to_numpy()
         for i in range(n):
             if params["metric"] == "completed_throughput" and status[i] != "completed":
-                results[i], expl[i] = NOT_EVALUABLE, f"Throughput is defined only for completed cases ({status[i]})."
+                results[i], keys[i], margs[i] = NOT_EVALUABLE, "conf.dur.not_completed", {"status": msg(f"status.{status[i]}")}
                 continue
             over = dur[i] > limit
-            suffix = "" if status[i] == "completed" else " (observed so far; case not known to be complete)"
+            suffix = "" if status[i] == "completed" else "_open"
             results[i] = VIOLATING if over else COMPLIANT
-            expl[i] = f"{_hours(dur[i])} {'exceeds' if over else 'within'} the {_hours(limit)} limit{suffix}."
-        return pd.DataFrame({"result": results, "explanation": expl}, index=cases.index)
+            keys[i] = f"conf.dur.{'over' if over else 'within'}{suffix}"
+            margs[i] = {"hours": _h(dur[i]), "limit": _h(limit)}
+        return out()
 
     acts_all = ev["activity"].to_numpy()
     ts_all = ev["ts"].to_numpy()
@@ -143,44 +149,38 @@ def evaluate(log: EventLog, rule_type: str, params: dict) -> pd.DataFrame:
         lo, hi = bounds[i], bounds[i + 1]
         acts, ts = acts_all[lo:hi], ts_all[lo:hi]
         done = bool(complete[i])
-        if rule_type == "required_activity":
-            k = int((acts == params["activity"]).sum())
-            if k:
-                r, e = COMPLIANT, f"'{params['activity']}' occurs {k} time(s)."
-            elif done:
-                r, e = VIOLATING, f"'{params['activity']}' never occurs."
+        if rule_type in ("required_activity", "forbidden_activity", "max_occurrences"):
+            act = params["activity"]
+            k = int((acts == act).sum())
+            p = {"activity": act, "count": k}
+            if rule_type == "required_activity":
+                r, key = (COMPLIANT, "conf.req.present") if k else (
+                    (VIOLATING, "conf.req.absent") if done else (NOT_EVALUABLE, "conf.req.absent_open"))
+            elif rule_type == "forbidden_activity":
+                r, key = (VIOLATING, "conf.forb.present") if k else (
+                    (COMPLIANT, "conf.forb.absent") if done else (NOT_EVALUABLE, "conf.forb.absent_open"))
             else:
-                r, e = NOT_EVALUABLE, f"'{params['activity']}' has not occurred yet and {open_note}."
-        elif rule_type == "forbidden_activity":
-            k = int((acts == params["activity"]).sum())
-            if k:
-                r, e = VIOLATING, f"'{params['activity']}' occurs {k} time(s)."
-            elif done:
-                r, e = COMPLIANT, f"'{params['activity']}' does not occur."
-            else:
-                r, e = NOT_EVALUABLE, f"'{params['activity']}' has not occurred so far but {open_note}."
+                p["max"] = params["max_count"]
+                r, key = (VIOLATING, "conf.maxocc.over") if k > params["max_count"] else (
+                    (COMPLIANT, "conf.maxocc.ok") if done else (NOT_EVALUABLE, "conf.maxocc.open"))
         elif rule_type == "precedence":
-            r, e = _precedence(acts, ts, params["activity_a"], params["activity_b"], done)
-        elif rule_type == "max_occurrences":
-            k = int((acts == params["activity"]).sum())
-            mx = params["max_count"]
-            if k > mx:
-                r, e = VIOLATING, f"'{params['activity']}' occurs {k} time(s); maximum is {mx}."
-            elif done:
-                r, e = COMPLIANT, f"'{params['activity']}' occurs {k} time(s); maximum is {mx}."
-            else:
-                r, e = NOT_EVALUABLE, f"'{params['activity']}' occurs {k} time(s) so far and {open_note}."
+            r, key, p = _precedence(acts, ts, params["activity_a"], params["activity_b"], done)
         elif rule_type == "start_activity":
-            r, e = _boundary_check(acts, ts, set(params["activities"]), False, "first")
+            r, key, p = _boundary_check(acts, ts, set(params["activities"]), False)
         elif rule_type == "end_activity":
             if not done:
-                r, e = NOT_EVALUABLE, f"The end activity cannot be judged because {open_note}."
+                r, key, p = NOT_EVALUABLE, "conf.end.open", {}
             else:
-                r, e = _boundary_check(acts, ts, set(params["activities"]), True, "last")
+                r, key, p = _boundary_check(acts, ts, set(params["activities"]), True)
         else:
             raise ValueError(f"Unknown rule type {rule_type!r}")
-        results[i], expl[i] = r, e
-    return pd.DataFrame({"result": results, "explanation": expl}, index=cases.index)
+        results[i], keys[i], margs[i] = r, key, p
+    return out()
+
+
+def explain(row, lang: str) -> str:
+    """Render the explanation of one evaluation row."""
+    return t(lang, row["key"], **(row["params"] or {}))
 
 
 def evaluate_rule(log: EventLog, rule: ConformanceRule) -> pd.DataFrame:

@@ -1,0 +1,2 @@
+<script src="{{ url_for('static', path='vendor/plotly-basic.min.js') }}"></script>
+{% if lang != 'en' %}<script src="{{ url_for('static', path='vendor/plotly-locale-' ~ lang ~ '.js') }}"></script>{% endif %}

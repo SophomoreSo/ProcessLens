@@ -23,6 +23,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
+from app.i18n import t
+from app.services.preferences import language_for
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -46,6 +48,11 @@ def csrf_token() -> str:
     return hmac.new(secret, b"processlens-csrf-v1", hashlib.sha256).hexdigest()
 
 
+def _forbidden(request: Request, code: str) -> JSONResponse:
+    message = t(language_for(request), f"error.{code}")
+    return JSONResponse({"error": {"code": code, "message": message, "details": None}}, status_code=403)
+
+
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -53,14 +60,10 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get("origin")
             if origin and origin != "null":
                 if urlsplit(origin).netloc != request.headers.get("host", ""):
-                    return JSONResponse({"error": {"code": "forbidden_origin",
-                                                   "message": "Cross-origin requests are not allowed.",
-                                                   "details": None}}, status_code=403)
+                    return _forbidden(request, "forbidden_origin")
             token = request.headers.get("x-csrf-token", "")
             if not hmac.compare_digest(token, csrf_token()):
-                return JSONResponse({"error": {"code": "csrf_failed",
-                                               "message": "Missing or invalid CSRF token. Reload the page and retry.",
-                                               "details": None}}, status_code=403)
+                return _forbidden(request, "csrf_failed")
         response = await call_next(request)
         is_docs = path in ("/docs", "/redoc") or path.startswith("/docs/")
         response.headers.setdefault("Content-Security-Policy", DOCS_CSP if is_docs else APP_CSP)

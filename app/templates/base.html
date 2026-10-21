@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang }}" data-locale="{{ locale_tag }}" data-motion="{{ motion }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,43 +7,44 @@
   <title>{{ title }} · ProcessLens</title>
   <link rel="icon" href="{{ url_for('static', path='img/favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+  <script type="application/json" id="i18n-catalog">{{ catalog|tojson }}</script>
   {% block head %}{% endblock %}
 </head>
 <body data-page="{{ page }}">
 <div class="shell">
-  <aside class="sidebar" aria-label="Main navigation">
+  <aside class="sidebar" aria-label="{{ t('nav.main') }}">
     <a class="brand" href="/" data-keep-query>
-      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+      <svg class="brand-mark" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
         <circle cx="13" cy="13" r="9.5" fill="none" stroke="currentColor" stroke-width="2.4" opacity=".9"/>
         <path d="M20 20l8 8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-        <circle cx="8.5" cy="13" r="2" fill="#0b7a75"/><circle cx="13" cy="9" r="2" fill="#4f46b8"/>
-        <circle cx="17.5" cy="13" r="2" fill="#0b7a75"/>
-        <path d="M8.5 13L13 9l4.5 4" fill="none" stroke="#0b7a75" stroke-width="1.4"/>
+        <path class="brand-flow" d="M8.5 13L13 9l4.5 4" fill="none" stroke="#0b7a75" stroke-width="1.4"/>
+        <circle class="brand-dot d1" cx="8.5" cy="13" r="2" fill="#0b7a75"/><circle class="brand-dot d2" cx="13" cy="9" r="2" fill="#4f46b8"/>
+        <circle class="brand-dot d3" cx="17.5" cy="13" r="2" fill="#0b7a75"/>
       </svg>
-      <span><b>ProcessLens</b><small>process analysis workbench</small></span>
+      <span><b>ProcessLens</b><small>{{ t('brand.tagline') }}</small></span>
     </a>
     <ul class="nav">
-      {% for key, path, label in pages %}
+      {% for key, path in pages %}
         {% if key == 'datasets' %}<li class="sep" role="separator"></li>{% endif %}
-        <li><a href="{{ path }}" data-keep-query {% if key == page %}aria-current="page"{% endif %}>{{ label }}
-          {% if key == 'alerts' %}<span class="nav-badge hidden" id="nav-alert-badge" title="Open alerts"></span>{% endif %}</a></li>
+        <li><a href="{{ path }}" data-keep-query {% if key == page %}aria-current="page"{% endif %}>{{ t('nav.' ~ key) }}
+          {% if key == 'alerts' %}<span class="nav-badge hidden" id="nav-alert-badge" title="{{ t('nav.open_alerts') }}"></span>{% endif %}</a></li>
       {% endfor %}
     </ul>
     <div class="sidebar-foot">
-      v{{ version }} · local single-user mode<br>
-      <a href="/docs" target="_blank" rel="noopener">API docs</a> ·
-      <button type="button" class="btn-ghost btn-sm" id="theme-toggle" aria-label="Toggle colour theme">Theme</button>
+      v{{ version }} · {{ t('brand.local_mode') }}<br>
+      <a href="/docs" target="_blank" rel="noopener">{{ t('nav.api_docs') }}</a> ·
+      <button type="button" class="btn-ghost btn-sm" id="theme-toggle" aria-label="{{ t('nav.toggle_theme') }}">{{ t('nav.theme') }}</button>
     </div>
   </aside>
   <div class="main">
     {% block topbar %}
     <header class="topbar">
       <div class="topbar-row">
-        <label class="inline" for="dataset-select"><span class="muted">Dataset</span></label>
-        <select id="dataset-select" aria-label="Select dataset"><option value="">Loading…</option></select>
+        <label class="inline" for="dataset-select"><span class="muted">{{ t('top.dataset') }}</span></label>
+        <select id="dataset-select" aria-label="{{ t('top.select_dataset') }}"><option value="">{{ t('common.loading') }}</option></select>
         <span id="dataset-badges" class="chips"></span>
         <span class="grow"></span>
-        <button type="button" id="filters-button" class="btn">Filters <span class="badge" id="filter-count">0</span></button>
+        <button type="button" id="filters-button" class="btn">{{ t('filters.button') }} <span class="badge" id="filter-count">0</span></button>
       </div>
       <div class="topbar-row">
         <div id="filter-chips" class="chips" aria-live="polite"></div>
@@ -58,49 +59,47 @@
 
 <dialog id="filter-dialog" aria-labelledby="filter-dialog-title">
   <form method="dialog" id="filter-form">
-    <div class="dialog-head"><h2 id="filter-dialog-title">Case filters</h2>
-      <button type="button" class="btn-ghost" data-close aria-label="Close">✕</button></div>
+    <div class="dialog-head"><h2 id="filter-dialog-title">{{ t('filters.title') }}</h2>
+      <button type="button" class="btn-ghost" data-close aria-label="{{ t('common.close') }}">✕</button></div>
     <div class="dialog-body">
-      <p class="notice info small">Filters select <b>cases</b>; every selected case keeps its complete event history.
-        All criteria combine with AND. The same filters apply to KPIs, graphs, variants, cases, comparisons and exports.</p>
+      <p class="notice info small">{{ t('filters.intro') }}</p>
       <div class="form-grid">
-        <label>Case start from (inclusive)<input type="date" name="start_from"></label>
-        <label>Case start to (inclusive)<input type="date" name="start_to"></label>
-        <label>Min observed duration (h)<input type="number" min="0" step="any" name="min_duration_h"></label>
-        <label>Max observed duration (h)<input type="number" min="0" step="any" name="max_duration_h"></label>
-        <label>Rework<select name="rework"><option value="">Any</option><option value="true">Rework cases only</option>
-          <option value="false">No rework</option></select></label>
+        <label>{{ t('filters.start_from') }}<input type="date" name="start_from"></label>
+        <label>{{ t('filters.start_to') }}<input type="date" name="start_to"></label>
+        <label>{{ t('filters.min_duration') }}<input type="number" min="0" step="any" name="min_duration_h"></label>
+        <label>{{ t('filters.max_duration') }}<input type="number" min="0" step="any" name="max_duration_h"></label>
+        <label>{{ t('filters.rework') }}<select name="rework"><option value="">{{ t('filters.any') }}</option><option value="true">{{ t('filters.rework_only') }}</option>
+          <option value="false">{{ t('filters.no_rework') }}</option></select></label>
       </div>
       <div class="form-grid">
-        <label>Contains all of these activities<select multiple name="activity" data-options="activities"></select></label>
-        <label>Contains none of these activities<select multiple name="exclude_activity" data-options="activities"></select></label>
-        <label>Any event by resource<select multiple name="resource" data-options="resources"></select></label>
-        <label>Any event in department<select multiple name="department" data-options="departments"></select></label>
+        <label>{{ t('filters.activity_all') }}<select multiple name="activity" data-options="activities"></select></label>
+        <label>{{ t('filters.activity_none') }}<select multiple name="exclude_activity" data-options="activities"></select></label>
+        <label>{{ t('filters.resource_any') }}<select multiple name="resource" data-options="resources"></select></label>
+        <label>{{ t('filters.department_any') }}<select multiple name="department" data-options="departments"></select></label>
       </div>
-      <fieldset><legend>Completion status</legend>
+      <fieldset><legend>{{ t('filters.status') }}</legend>
         <div class="actions">
-          <label class="inline"><input type="checkbox" name="status" value="completed"> completed</label>
-          <label class="inline"><input type="checkbox" name="status" value="incomplete"> incomplete</label>
-          <label class="inline"><input type="checkbox" name="status" value="unknown"> unknown</label>
+          <label class="inline"><input type="checkbox" name="status" value="completed"> {{ t('status.completed') }}</label>
+          <label class="inline"><input type="checkbox" name="status" value="incomplete"> {{ t('status.incomplete') }}</label>
+          <label class="inline"><input type="checkbox" name="status" value="unknown"> {{ t('status.unknown') }}</label>
         </div>
       </fieldset>
-      <fieldset><legend>Conformance result</legend>
+      <fieldset><legend>{{ t('filters.conformance') }}</legend>
         <div class="form-grid">
-          <label>Rule<select name="conformance_rule" data-options="conformance_rules"><option value="">—</option></select></label>
+          <label>{{ t('filters.rule') }}<select name="conformance_rule" data-options="conformance_rules"><option value="">—</option></select></label>
           <div class="actions">
-            <label class="inline"><input type="checkbox" name="conformance_result" value="compliant"> compliant</label>
-            <label class="inline"><input type="checkbox" name="conformance_result" value="violating"> violating</label>
-            <label class="inline"><input type="checkbox" name="conformance_result" value="not_evaluable"> not evaluable</label>
+            <label class="inline"><input type="checkbox" name="conformance_result" value="compliant"> {{ t('result.compliant') }}</label>
+            <label class="inline"><input type="checkbox" name="conformance_result" value="violating"> {{ t('result.violating') }}</label>
+            <label class="inline"><input type="checkbox" name="conformance_result" value="not_evaluable"> {{ t('result.not_evaluable') }}</label>
           </div>
         </div>
       </fieldset>
-      <p class="small muted">Variant and transition filters are set from the Variants and Process pages and shown as chips.
-        Hold Ctrl/⌘ to select several values in a list.</p>
+      <p class="small muted">{{ t('filters.hint') }}</p>
     </div>
     <div class="dialog-foot">
-      <button type="button" class="btn" id="filter-clear">Clear all</button>
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" class="btn btn-primary" id="filter-apply">Apply filters</button>
+      <button type="button" class="btn" id="filter-clear">{{ t('filters.clear_all') }}</button>
+      <button type="button" class="btn" data-close>{{ t('common.cancel') }}</button>
+      <button type="submit" class="btn btn-primary" id="filter-apply">{{ t('filters.apply') }}</button>
     </div>
   </form>
 </dialog>

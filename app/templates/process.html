@@ -2,54 +2,52 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Process explorer</h1>
-    <p>A <b>directly-follows graph</b> of the selected cases: an edge A → B means B was the next recorded event after A in
-      the same case. It is not a BPMN model and does not show causality, concurrency or decision logic.</p>
+    <h1>{{ t('nav.process') }}</h1>
+    <p>{{ t('proc.intro') }}</p>
   </div>
   <div id="process-exports"></div>
 </div>
 <section class="card">
   <div class="graph-toolbar">
-    <label>Display<select id="mode">
-      <option value="frequency">Frequency (edge occurrences)</option>
-      <option value="elapsed">Elapsed time between events</option></select></label>
-    <label>Elapsed statistic<select id="metric" disabled>
-      <option value="median">Median</option><option value="p90">p90</option><option value="mean">Mean</option></select></label>
-    <label><span>Hide activities in &lt; <output id="node-thr-out">0%</output> of cases</span>
+    <label>{{ t('proc.display') }}<select id="mode">
+      <option value="frequency">{{ t('proc.mode.frequency') }}</option>
+      <option value="elapsed">{{ t('proc.mode.elapsed') }}</option></select></label>
+    <label>{{ t('proc.statistic') }}<select id="metric" disabled>
+      <option value="median">{{ t('stat.median') }}</option><option value="p90">{{ t('stat.p90') }}</option><option value="mean">{{ t('stat.mean') }}</option></select></label>
+    <label><span>{{ t('proc.node_threshold') }} <output id="node-thr-out">0%</output></span>
       <input type="range" id="node-thr" min="0" max="50" step="1" value="0"></label>
-    <label><span>Hide edges in &lt; <output id="edge-thr-out">0%</output> of cases</span>
+    <label><span>{{ t('proc.edge_threshold') }} <output id="edge-thr-out">0%</output></span>
       <input type="range" id="edge-thr" min="0" max="50" step="1" value="0"></label>
+    <label class="inline" id="flow-toggle-label"><input type="checkbox" id="flow-toggle"> {{ t('proc.animate_flow') }}</label>
   </div>
   <p class="small muted" id="visibility-note"></p>
   <div class="graph-wrap">
-    <div id="graph" class="graph" role="img" aria-label="Directly-follows process graph"></div>
+    <div id="graph" class="graph" role="img" aria-label="{{ t('proc.graph_label') }}"></div>
     <div class="graph-controls">
-      <button type="button" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-      <button type="button" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-      <button type="button" id="fit" title="Fit to view" aria-label="Fit graph to view">⤢</button>
-      <button type="button" id="reset" title="Reset layout" aria-label="Reset layout">↺</button>
+      <button type="button" id="zoom-in" title="{{ t('proc.zoom_in') }}" aria-label="{{ t('proc.zoom_in') }}">+</button>
+      <button type="button" id="zoom-out" title="{{ t('proc.zoom_out') }}" aria-label="{{ t('proc.zoom_out') }}">−</button>
+      <button type="button" id="fit" title="{{ t('proc.fit') }}" aria-label="{{ t('proc.fit') }}">⤢</button>
+      <button type="button" id="reset" title="{{ t('proc.reset') }}" aria-label="{{ t('proc.reset') }}">↺</button>
     </div>
   </div>
 </section>
 <div class="grid-2">
-  <section class="card"><h2>Legend</h2>
+  <section class="card"><h2>{{ t('proc.legend') }}</h2>
     <div class="legend">
-      <div class="row"><span class="swatch" style="background:var(--text-muted);border-radius:999px"></span>Synthetic start / end markers (not activities)</div>
-      <div class="row"><span class="swatch" style="border:2px solid var(--accent)"></span>Activity — label shows occurrences (events)</div>
-      <div class="row"><span class="swatch" style="height:4px;background:var(--border-strong)"></span>Edge width ∝ occurrences (frequency) or elapsed time (time mode)</div>
-      <div class="row"><span class="swatch" style="height:4px;background:var(--chart-3)"></span>Time mode: elapsed time above half of the maximum</div>
-      <div>Edge <b>occurrences</b> = total times the transition happened; <b>distinct cases</b> = cases containing it at least once (hover an edge).</div>
-      <div>Elapsed time = difference between consecutive event timestamps (d = days, h = hours). It can include waiting and work.</div>
-      <div>Thresholds only hide elements in this drawing; KPIs and other pages are unaffected.</div>
-      <div>Click an activity or edge to list the matching cases.</div>
+      <div class="row"><span class="swatch" style="background:var(--text-muted);border-radius:999px"></span>{{ t('proc.legend.markers') }}</div>
+      <div class="row"><span class="swatch" style="border:2px solid var(--accent)"></span>{{ t('proc.legend.activity') }}</div>
+      <div class="row"><span class="swatch" style="height:4px;background:var(--border-strong)"></span>{{ t('proc.legend.width') }}</div>
+      <div class="row"><span class="swatch" style="height:4px;background:var(--chart-3)"></span>{{ t('proc.legend.slow') }}</div>
+      <div>{{ t('proc.legend.counts') }}</div>
+      <div>{{ t('proc.legend.elapsed') }}</div>
+      <div>{{ t('proc.legend.thresholds') }}</div>
+      <div>{{ t('proc.legend.click') }}</div>
     </div>
   </section>
-  <section class="card"><h2>Population</h2><div id="graph-stats"></div></section>
+  <section class="card"><h2>{{ t('proc.population') }}</h2><div id="graph-stats"></div></section>
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', path='vendor/cytoscape.min.js') }}"></script>
-<script src="{{ url_for('static', path='vendor/dagre.min.js') }}"></script>
-<script src="{{ url_for('static', path='vendor/cytoscape-dagre.js') }}"></script>
+{% include "_cytoscape.html" %}
 <script type="module" src="{{ url_for('static', path='js/process.js') }}"></script>
 {% endblock %}

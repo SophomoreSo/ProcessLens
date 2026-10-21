@@ -5,6 +5,66 @@
 
 const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || "";
 
+// ---------------------------------------------------------------- i18n
+// The server embeds the catalog of the selected language (English merged in as fallback).
+const CATALOG = (() => {
+  try { return JSON.parse(document.getElementById("i18n-catalog")?.textContent || "{}"); } catch { return {}; }
+})();
+export const LANG = document.documentElement.lang || "en";
+export const LOCALE = document.documentElement.dataset.locale || "en-US";
+
+/** Translate ``key``, filling ``{name}`` placeholders from ``params``. Unknown keys render as the key. */
+export function t(key, params = {}) {
+  const template = CATALOG[key] ?? key;
+  return template.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
+}
+
+// ---------------------------------------------------------------- motion
+const reducedMotionQuery = matchMedia("(prefers-reduced-motion: reduce)");
+
+/** Animations are on when the user setting says so ("system" follows the OS reduce-motion setting). */
+export function motionEnabled() {
+  const pref = document.documentElement.dataset.motion || "system";
+  if (pref === "on") return true;
+  if (pref === "off") return false;
+  return !reducedMotionQuery.matches;
+}
+
+function applyMotionState() {
+  document.documentElement.dataset.motionActive = String(motionEnabled());
+}
+applyMotionState();
+reducedMotionQuery.addEventListener("change", () => { applyMotionState(); window.dispatchEvent(new Event("motionchange")); });
+
+/** Staggered entrance animation for the direct children of ``el`` (no-op when motion is off). */
+export function reveal(el, { stagger = 45, max = 12 } = {}) {
+  if (!el || !motionEnabled()) return el;
+  [...el.children].forEach((child, i) => {
+    child.classList.remove("anim-in");
+    child.style.setProperty("--i", String(Math.min(i, max)));
+    void child.offsetWidth; // restart the animation
+    child.classList.add("anim-in");
+  });
+  el.dataset.stagger = String(stagger);
+  return el;
+}
+
+/** Animate a number from 0 to ``value`` inside ``el`` using ``format`` (renders the final value when motion is off). */
+export function countUp(el, value, format, duration = 750) {
+  if (value === null || value === undefined || Number.isNaN(value) || !motionEnabled()) {
+    el.textContent = format(value);
+    return;
+  }
+  const start = performance.now();
+  const ease = (x) => 1 - (1 - x) ** 3;
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    el.textContent = format(p < 1 ? value * ease(p) : value);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 export class ApiError extends Error {
   constructor(status, code, message, details) {
     super(message);
@@ -20,7 +80,7 @@ export async function api(path, { method = "GET", body, form, params } = {}) {
     const qs = params instanceof URLSearchParams ? params.toString() : new URLSearchParams(params).toString();
     if (qs) url += (url.includes("?") ? "&" : "?") + qs;
   }
-  const headers = { Accept: "application/json" };
+  const headers = { Accept: "application/json", "X-ProcessLens-Language": LANG };
   const opts = { method, headers, credentials: "same-origin" };
   if (method !== "GET") headers["X-CSRF-Token"] = CSRF;
   if (form) opts.body = form;
@@ -32,14 +92,14 @@ export async function api(path, { method = "GET", body, form, params } = {}) {
   try {
     res = await fetch(url, opts);
   } catch (e) {
-    throw new ApiError(0, "network_error", "Cannot reach the ProcessLens server. Is it still running?");
+    throw new ApiError(0, "network_error", t("err.network"));
   }
   if (res.status === 204) return null;
   const type = res.headers.get("content-type") || "";
   const data = type.includes("application/json") ? await res.json() : await res.text();
   if (!res.ok) {
     const err = (data && data.error) || {};
-    throw new ApiError(res.status, err.code || "http_error", err.message || `Request failed (${res.status})`, err.details);
+    throw new ApiError(res.status, err.code || "http_error", err.message || t("err.request_failed", { status: res.status }), err.details);
   }
   return data;
 }
@@ -52,7 +112,12 @@ export function h(tag, attrs = {}, ...children) {
     if (k === "class") el.className = v;
     else if (k === "dataset") Object.assign(el.dataset, v);
     else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else if (k === "style" && typeof v === "object") {
+      for (const [prop, val] of Object.entries(v)) {
+        if (prop.startsWith("--")) el.style.setProperty(prop, val); // custom properties need setProperty
+        else el.style[prop] = val;
+      }
+    }
     else if (v === true) el.setAttribute(k, "");
     else el.setAttribute(k, String(v));
   }
@@ -77,22 +142,27 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // ---------------------------------------------------------------- formatting
-const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const nf1 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-const nf2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const nf = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
+const nf2 = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
+const pctFormats = {};
 
 export const fmtInt = (v) => (v === null || v === undefined ? "—" : nf.format(v));
 export const fmtNum = (v, d = 1) => (v === null || v === undefined ? "—" : (d === 2 ? nf2 : nf1).format(v));
-export const fmtPct = (v, d = 1) => (v === null || v === undefined ? "—" : `${(v * 100).toFixed(d)}%`);
+export function fmtPct(v, d = 1) {
+  if (v === null || v === undefined) return "—";
+  pctFormats[d] ||= new Intl.NumberFormat(LOCALE, { style: "percent", minimumFractionDigits: d, maximumFractionDigits: d });
+  return pctFormats[d].format(v);
+}
 
 export function fmtDur(seconds) {
   if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "—";
   const s = Math.abs(seconds);
   const sign = seconds < 0 ? "−" : "";
-  if (s < 60) return `${sign}${nf.format(s)} s`;
-  if (s < 3600) return `${sign}${nf1.format(s / 60)} min`;
-  if (s < 86400 * 2) return `${sign}${nf1.format(s / 3600)} h`;
-  return `${sign}${nf1.format(s / 86400)} d`;
+  if (s < 60) return sign + t("unit.seconds", { n: nf.format(s) });
+  if (s < 3600) return sign + t("unit.minutes", { n: nf1.format(s / 60) });
+  if (s < 86400 * 2) return sign + t("unit.hours", { n: nf1.format(s / 3600) });
+  return sign + t("unit.days", { n: nf1.format(s / 86400) });
 }
 
 export function fmtTs(iso, tz, { seconds = false, dateOnly = false } = {}) {
@@ -103,21 +173,23 @@ export function fmtTs(iso, tz, { seconds = false, dateOnly = false } = {}) {
     : { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit",
         ...(seconds ? { second: "2-digit" } : {}), hour12: false, timeZone: tz || "UTC" };
   try {
-    return new Intl.DateTimeFormat(undefined, opts).format(d);
+    return new Intl.DateTimeFormat(LOCALE, opts).format(d);
   } catch {
     return iso;
   }
 }
 
-export const STATUS_LABEL = { completed: "completed", incomplete: "incomplete", unknown: "unknown status" };
-export const RESULT_LABEL = { compliant: "compliant", violating: "violating", not_evaluable: "not evaluable" };
+export const STATUS_LABEL = { completed: t("status.completed"), incomplete: t("status.incomplete"), unknown: t("status.unknown") };
+export const RESULT_LABEL = { compliant: t("result.compliant"), violating: t("result.violating"), not_evaluable: t("result.not_evaluable") };
+export const SEVERITY_LABEL = { error: t("severity.error"), warning: t("severity.warning"), info: t("severity.info"),
+  low: t("severity.low"), medium: t("severity.medium"), high: t("severity.high") };
 
 export function badge(text, cls = "") {
   return h("span", { class: `badge ${cls}` }, text);
 }
 
 // ---------------------------------------------------------------- UI states
-export function loading(el, text = "Loading…") {
+export function loading(el, text = t("common.loading")) {
   return clear(el, h("div", { class: "state" }, h("span", { class: "spinner" }), " ", text));
 }
 
@@ -129,19 +201,19 @@ export function empty(el, title, hint, action) {
 export function showError(el, err) {
   const msg = err instanceof ApiError ? err.message : String(err?.message || err);
   let hint = "";
-  if (err?.code === "network_error") hint = "Start the server again (see README) and reload this page.";
-  else if (err?.code === "csrf_failed") hint = "Reload the page to refresh the security token.";
-  else if (err?.status === 404) hint = "The item may have been deleted. Choose another dataset.";
-  else if (err?.code === "invalid_filter") hint = "Adjust or clear the filters.";
-  else if (err?.status >= 500) hint = "Check the server log for details.";
-  return clear(el, h("div", { class: "notice error", role: "alert" }, h("b", {}, "Something went wrong: "), msg,
+  if (err?.code === "network_error") hint = t("err.hint.network");
+  else if (err?.code === "csrf_failed") hint = t("err.hint.csrf");
+  else if (err?.status === 404) hint = t("err.hint.not_found");
+  else if (err?.code === "invalid_filter") hint = t("err.hint.filter");
+  else if (err?.status >= 500) hint = t("err.hint.server");
+  return clear(el, h("div", { class: "notice error", role: "alert" }, h("b", {}, t("err.something_wrong")), " ", msg,
     hint ? h("div", { class: "small" }, hint) : null));
 }
 
 export function toast(message, kind = "") {
-  const t = h("div", { class: `toast ${kind}`, role: "status" }, message);
-  $("#toasts").append(t);
-  setTimeout(() => t.remove(), 4500);
+  const el = h("div", { class: `toast ${kind}`, role: "status" }, message);
+  $("#toasts").append(el);
+  setTimeout(() => el.remove(), 4500);
 }
 
 // ---------------------------------------------------------------- URL state
@@ -234,9 +306,10 @@ async function loadFilterOptions() {
 }
 
 const CHIP_LABELS = {
-  start_from: "Started from", start_to: "Started until", activity: "Has activity", exclude_activity: "Lacks activity",
-  resource: "Resource", department: "Department", variant: "Variant", min_duration_h: "Duration ≥ (h)",
-  max_duration_h: "Duration ≤ (h)", rework: "Rework", status: "Status", conformance_result: "Conformance",
+  start_from: t("chip.start_from"), start_to: t("chip.start_to"), activity: t("chip.activity"),
+  exclude_activity: t("chip.exclude_activity"), resource: t("chip.resource"), department: t("chip.department"),
+  variant: t("chip.variant"), min_duration_h: t("chip.min_duration"), max_duration_h: t("chip.max_duration"),
+  rework: t("chip.rework"), status: t("chip.status"), conformance_result: t("chip.conformance"),
 };
 
 function renderChips() {
@@ -253,24 +326,24 @@ function renderChips() {
     applyFilters(nf);
   };
   const chip = (label, key, value) => chips.push(h("span", { class: "chip" }, h("span", { title: `${label}: ${value}` }, `${label}: ${value}`),
-    h("button", { type: "button", "aria-label": `Remove filter ${label} ${value}`, onclick: remove(key, value) }, "×")));
+    h("button", { type: "button", "aria-label": t("chip.remove", { label, value }), onclick: remove(key, value) }, "×")));
   for (const [k, v] of Object.entries(f)) {
     if (["transition_from", "transition_to", "conformance_rule", "conformance_result"].includes(k)) continue;
-    if (Array.isArray(v)) v.forEach((x) => chip(CHIP_LABELS[k] || k, k, k === "variant" ? `#${x.slice(0, 8)}` : x));
-    else chip(CHIP_LABELS[k] || k, k, k === "rework" ? (v === "true" ? "yes" : "no") : v);
+    if (Array.isArray(v)) v.forEach((x) => chip(CHIP_LABELS[k] || k, k, k === "variant" ? `#${x.slice(0, 8)}` : k === "status" ? (STATUS_LABEL[x] || x) : x));
+    else chip(CHIP_LABELS[k] || k, k, k === "rework" ? (v === "true" ? t("common.yes") : t("common.no")) : v);
   }
   if (f.transition_from) {
-    const name = (s) => (s === "__start__" ? "▶ start" : s === "__end__" ? "■ end" : s);
-    chip("Transition", "transition", `${name(f.transition_from)} → ${name(f.transition_to)}`);
+    const name = (s) => (s === "__start__" ? t("graph.start") : s === "__end__" ? t("graph.end") : s);
+    chip(t("chip.transition"), "transition", `${name(f.transition_from)} → ${name(f.transition_to)}`);
   }
   if (f.conformance_rule && f.conformance_result) {
     const rule = filterOptions?.conformance_rules?.find((r) => String(r.id) === String(f.conformance_rule));
-    chip("Conformance", "conformance", `${rule ? rule.name : "rule " + f.conformance_rule}: ${f.conformance_result.map((r) => RESULT_LABEL[r] || r).join(", ")}`);
+    chip(t("chip.conformance"), "conformance", `${rule ? rule.name : t("chip.rule_id", { id: f.conformance_rule })}: ${f.conformance_result.map((r) => RESULT_LABEL[r] || r).join(", ")}`);
   }
   if (chips.length) {
-    chips.push(h("button", { type: "button", class: "btn-ghost btn-sm", onclick: () => applyFilters({}) }, "Clear all"));
+    chips.push(h("button", { type: "button", class: "btn-ghost btn-sm", onclick: () => applyFilters({}) }, t("filters.clear_all")));
   } else {
-    chips.push(h("span", { class: "muted small" }, "No filters — all cases of the dataset are included."));
+    chips.push(h("span", { class: "muted small" }, t("filters.none")));
   }
   clear(box, chips);
   const count = Object.keys(f).filter((k) => !["transition_to", "conformance_result"].includes(k)).length;
@@ -341,10 +414,10 @@ function renderDatasetBadges() {
   const ds = currentDataset();
   if (!ds) return clear(box);
   clear(box,
-    ds.is_demo ? h("span", { class: "badge synthetic", title: "Generated demo data, not real business data" }, "SYNTHETIC DEMO DATA") : null,
-    h("span", { class: "badge", title: `Dataset version ${ds.version}` }, `v${ds.version}`),
-    h("span", { class: "muted small" }, `${fmtInt(ds.case_count)} cases · ${fmtInt(ds.event_count)} events · times in ${ds.display_timezone}`),
-    ds.quarantined_count ? h("span", { class: "badge warn", title: "Invalid rows kept aside during import" }, `${fmtInt(ds.quarantined_count)} quarantined rows`) : null);
+    ds.is_demo ? h("span", { class: "badge synthetic", title: t("top.synthetic_title") }, t("top.synthetic")) : null,
+    h("span", { class: "badge", title: t("top.version_title", { version: ds.version }) }, `v${ds.version}`),
+    h("span", { class: "muted small" }, t("top.dataset_summary", { cases: fmtInt(ds.case_count), events: fmtInt(ds.event_count), tz: ds.display_timezone })),
+    ds.quarantined_count ? h("span", { class: "badge warn", title: t("top.quarantined_title") }, t("top.quarantined", { count: fmtInt(ds.quarantined_count) })) : null);
 }
 
 async function refreshAlertBadge() {
@@ -367,7 +440,7 @@ export async function refreshDatasets() {
   if (sel) {
     clear(sel, datasetsCache.length
       ? datasetsCache.map((d) => h("option", { value: d.id, selected: d.id === id }, `${d.name} (v${d.version})`))
-      : h("option", { value: "" }, "No datasets yet"));
+      : h("option", { value: "" }, t("top.no_datasets")));
     sel.disabled = !datasetsCache.length;
   }
   if (id !== currentDatasetId()) setUrl({ dataset: id }, { replace: true });
@@ -377,11 +450,10 @@ export async function refreshDatasets() {
 }
 
 export function noDatasetState(el) {
-  return empty(el, "No dataset loaded yet",
-    "Import a CSV event log or load the synthetic purchase-to-pay demo to get started.",
+  return empty(el, t("empty.no_dataset.title"), t("empty.no_dataset.hint"),
     h("div", { class: "actions", style: { justifyContent: "center" } },
-      h("a", { class: "btn btn-primary", href: "/datasets?demo=1" }, "Load demo data"),
-      h("a", { class: "btn", href: "/import" }, "Import a CSV")));
+      h("a", { class: "btn btn-primary", href: "/datasets?demo=1" }, t("ds.load_demo")),
+      h("a", { class: "btn", href: "/import" }, t("ds.import_csv"))));
 }
 
 function initTheme() {
@@ -465,9 +537,9 @@ export function table(columns, rows, { onRowClick, sort, onSort, rowClass } = {}
 export function pager({ page, pageSize, total }, onPage) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return h("div", { class: "pager" },
-    h("span", { class: "muted" }, `${fmtInt(total)} rows · page ${page} of ${pages}`),
-    h("button", { type: "button", class: "btn-sm", disabled: page <= 1, onclick: () => onPage(page - 1) }, "‹ Prev"),
-    h("button", { type: "button", class: "btn-sm", disabled: page >= pages, onclick: () => onPage(page + 1) }, "Next ›"));
+    h("span", { class: "muted" }, t("pager.summary", { rows: fmtInt(total), page, pages })),
+    h("button", { type: "button", class: "btn-sm", disabled: page <= 1, onclick: () => onPage(page - 1) }, t("pager.prev")),
+    h("button", { type: "button", class: "btn-sm", disabled: page >= pages, onclick: () => onPage(page + 1) }, t("pager.next")));
 }
 
 export function variantSequence(activities) {
@@ -475,17 +547,17 @@ export function variantSequence(activities) {
   const parts = [];
   activities.forEach((a, i) => {
     if (i) parts.push(h("span", { class: "arrow", "aria-hidden": "true" }, "→"));
-    parts.push(h("span", { class: `step ${seen.has(a) ? "repeat" : ""}`, title: seen.has(a) ? "Repeated activity" : null }, a));
+    parts.push(h("span", { class: `step ${seen.has(a) ? "repeat" : ""}`, title: seen.has(a) ? t("variant.repeated_activity") : null }, a));
     seen.add(a);
   });
-  return h("div", { class: "seq", "aria-label": activities.join(" then ") }, parts);
+  return h("div", { class: "seq", "aria-label": activities.join(" → ") }, parts);
 }
 
 export function exportLinks(datasetId, kinds, extra = {}) {
   const p = filterParams();
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
   const qs = p.toString() ? `?${p.toString()}` : "";
-  return h("div", { class: "actions" }, h("span", { class: "muted small" }, "Export filtered:"),
+  return h("div", { class: "actions" }, h("span", { class: "muted small" }, t("export.filtered")),
     kinds.map(([kind, fmt, label]) => h("a", { class: "btn btn-sm", href: `/api/datasets/${datasetId}/exports/${kind}.${fmt}${qs}`,
       download: "" }, label)));
 }

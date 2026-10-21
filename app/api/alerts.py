@@ -5,10 +5,11 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_dataset
+from app.api.deps import get_dataset, request_lang
 from app.database import get_db
 from app.errors import AppError, not_found
 from app.models import Alert, AlertRule, ConformanceRule, Dataset
+from app.i18n import render
 from app.models.dataset import utcnow
 from app.schemas.common import Page
 from app.schemas.rules import AlertEvaluationResult, AlertOut, AlertRuleIn, AlertRuleOut, AlertStatusUpdate
@@ -17,10 +18,17 @@ from app.services.alerts import evaluate_alert_rules
 router = APIRouter(prefix="/api", tags=["alerts"])
 
 
+def alert_out(alert: Alert, rule_name: str | None, lang: str) -> AlertOut:
+    out = AlertOut.model_validate(alert)
+    out.rule_name = rule_name
+    out.message = render(lang, alert.message_key, alert.message_params, fallback=alert.message)
+    return out
+
+
 def _alert_rule(db: Session, ds: Dataset, rule_id: int) -> AlertRule:
     rule = db.get(AlertRule, rule_id)
     if rule is None or rule.dataset_id != ds.id:
-        raise not_found("Alert rule")
+        raise not_found("alert_rule")
     return rule
 
 
@@ -28,7 +36,7 @@ def _check_conformance_ref(db: Session, ds: Dataset, body: AlertRuleIn) -> None:
     if body.conformance_rule_id is not None:
         cr = db.get(ConformanceRule, body.conformance_rule_id)
         if cr is None or cr.dataset_id != ds.id:
-            raise AppError(422, "invalid_reference", "conformance_rule_id does not belong to this dataset")
+            raise AppError(422, "invalid_reference")
 
 
 @router.get("/datasets/{dataset_id}/alert-rules", response_model=list[AlertRuleOut], summary="List alert rules")
@@ -79,7 +87,7 @@ def evaluate(ds: Dataset = Depends(get_dataset), rule_id: list[int] = Query(defa
 def list_alerts(dataset_id: int | None = None, status: list[str] = Query(default=[]),
                 alert_rule_id: int | None = None, active_only: bool = False,
                 page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
-                db: Session = Depends(get_db)):
+                db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     q = select(Alert, AlertRule.name).join(AlertRule, AlertRule.id == Alert.alert_rule_id)
     if dataset_id is not None:
         q = q.where(Alert.dataset_id == dataset_id)
@@ -94,9 +102,7 @@ def list_alerts(dataset_id: int | None = None, status: list[str] = Query(default
                       .offset((page - 1) * page_size).limit(page_size)).all()
     items = []
     for alert, name in rows:
-        out = AlertOut.model_validate(alert)
-        out.rule_name = name
-        items.append(out)
+        items.append(alert_out(alert, name, lang))
     return Page[AlertOut](items=items, total=total or 0, page=page, page_size=page_size)
 
 
@@ -110,10 +116,11 @@ def alert_counts(dataset_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.patch("/alerts/{alert_id}", response_model=AlertOut, summary="Change alert status")
-def update_alert(alert_id: int, body: AlertStatusUpdate, db: Session = Depends(get_db)):
+def update_alert(alert_id: int, body: AlertStatusUpdate, db: Session = Depends(get_db),
+                 lang: str = Depends(request_lang)):
     alert = db.get(Alert, alert_id)
     if alert is None:
-        raise not_found("Alert")
+        raise not_found("alert")
     now = utcnow()
     alert.status = body.status
     if body.status == "acknowledged":
@@ -127,7 +134,5 @@ def update_alert(alert_id: int, body: AlertStatusUpdate, db: Session = Depends(g
     if body.note is not None:
         alert.note = body.note
     db.commit()
-    out = AlertOut.model_validate(alert)
     rule = db.get(AlertRule, alert.alert_rule_id)
-    out.rule_name = rule.name if rule else None
-    return out
+    return alert_out(alert, rule.name if rule else None, lang)

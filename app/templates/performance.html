@@ -2,39 +2,38 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Performance</h1>
-    <p>Elapsed times between consecutive events, and comparisons by resource, department and user-defined cohorts.
-      These are <b>descriptive associations</b> within the selected cases, not proof of root causes.</p>
+    <h1>{{ t('nav.performance') }}</h1>
+    <p>{{ t('perf.intro') }}</p>
   </div>
   <div id="perf-exports"></div>
 </div>
 <section class="card">
-  <div class="card-head"><h2>Transitions ranked by elapsed time</h2>
-    <label class="inline">Rank by <select id="rank-by"><option value="median">median</option><option value="p90">p90</option>
-      <option value="occurrences">occurrences</option></select></label></div>
-  <p class="small muted">Elapsed time = timestamp of an event minus the timestamp of the preceding event in the same case. It can contain waiting and processing.</p>
+  <div class="card-head"><h2>{{ t('perf.transitions_title') }}</h2>
+    <label class="inline">{{ t('perf.rank_by') }} <select id="rank-by"><option value="median">{{ t('stat.median') }}</option><option value="p90">{{ t('stat.p90') }}</option>
+      <option value="occurrences">{{ t('perf.occurrences') }}</option></select></label></div>
+  <p class="small muted">{{ t('perf.elapsed_note') }}</p>
   <div id="chart-transitions" class="chart" style="height:360px"></div>
   <div id="transitions-table"></div>
 </section>
 <div class="grid-2">
-  <section class="card"><h2>Resources</h2><div id="resources"></div></section>
-  <section class="card"><h2>Departments</h2><div id="departments"></div></section>
+  <section class="card"><h2>{{ t('perf.resources') }}</h2><div id="resources"></div></section>
+  <section class="card"><h2>{{ t('perf.departments') }}</h2><div id="departments"></div></section>
 </div>
-<section class="card" id="exec-card"><h2>Activity execution duration</h2><div id="execution"></div></section>
+<section class="card" id="exec-card"><h2>{{ t('perf.execution_title') }}</h2><div id="execution"></div></section>
 <section class="card">
-  <div class="card-head"><h2>Cohort comparison</h2><span class="badge info">descriptive</span></div>
-  <p class="small muted">Both cohorts are subsets of the cases selected by the global filters above. Leave a field empty to not constrain it.</p>
+  <div class="card-head"><h2>{{ t('perf.cohorts_title') }}</h2><span class="badge info">{{ t('common.descriptive') }}</span></div>
+  <p class="small muted">{{ t('perf.cohorts_note') }}</p>
   <form id="cohort-form">
     <div class="grid-2">
-      <fieldset data-cohort="a"><legend><input name="label" value="Cohort A" aria-label="Cohort A label" maxlength="100"></legend><div class="form-grid cohort-fields"></div></fieldset>
-      <fieldset data-cohort="b"><legend><input name="label" value="Cohort B" aria-label="Cohort B label" maxlength="100"></legend><div class="form-grid cohort-fields"></div></fieldset>
+      <fieldset data-cohort="a"><legend><input name="label" value="A" aria-label="{{ t('perf.cohort_label', name='A') }}" maxlength="100"></legend><div class="form-grid cohort-fields"></div></fieldset>
+      <fieldset data-cohort="b"><legend><input name="label" value="B" aria-label="{{ t('perf.cohort_label', name='B') }}" maxlength="100"></legend><div class="form-grid cohort-fields"></div></fieldset>
     </div>
-    <div class="actions" style="margin-top:10px"><button class="btn btn-primary" type="submit">Compare cohorts</button></div>
+    <div class="actions" style="margin-top:10px"><button class="btn btn-primary" type="submit">{{ t('perf.compare') }}</button></div>
   </form>
   <div id="cohort-result" style="margin-top:12px"></div>
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', path='vendor/plotly-basic.min.js') }}"></script>
+{% include "_plotly.html" %}
 <script type="module" src="{{ url_for('static', path='js/performance.js') }}"></script>
 {% endblock %}

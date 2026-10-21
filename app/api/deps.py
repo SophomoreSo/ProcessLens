@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import Depends, Query
+from fastapi import Depends, Query, Request
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,14 +16,20 @@ from app.schemas.filters import FilterSpec
 from app.services.conformance import lookup_factory
 from app.services.eventlog import EventLog, get_event_log
 from app.services.filtering import FilteredView, apply_filters
+from app.services.preferences import language_for
+
+
+def request_lang(request: Request) -> str:
+    """Response language: ``X-ProcessLens-Language`` header, else the saved user preference."""
+    return language_for(request)
 
 
 def get_dataset(dataset_id: int, db: Session = Depends(get_db)) -> Dataset:
     ds = db.get(Dataset, dataset_id)
     if ds is None:
-        raise not_found("Dataset")
+        raise not_found("dataset")
     if ds.status != "ready":
-        raise AppError(409, "dataset_not_ready", f"Dataset is {ds.status}")
+        raise AppError(409, "dataset_not_ready", status=ds.status)
     return ds
 
 

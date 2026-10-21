@@ -20,6 +20,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from sqlalchemy import select
 
 from app.database import session_scope
+from app.i18n import t
 from app.models import ImportJob
 from app.models.dataset import utcnow
 
@@ -35,9 +36,11 @@ def new_job_id() -> str:
     return uuid.uuid4().hex
 
 
-def set_progress(job_id: str, progress: float, stage: str) -> None:
+def set_progress(job_id: str, progress: float, stage_key: str, **params) -> None:
+    """``stage_key`` is a catalog key (rendered per request language by the API)."""
     with _lock:
-        _live[job_id] = {"progress": round(min(max(progress, 0.0), 1.0), 3), "stage": stage}
+        _live[job_id] = {"progress": round(min(max(progress, 0.0), 1.0), 3), "stage_key": stage_key,
+                         "stage_params": params}
 
 
 def live_progress(job_id: str) -> dict | None:
@@ -71,9 +74,10 @@ def recover_interrupted_jobs() -> int:
         jobs = db.scalars(select(ImportJob).where(ImportJob.status.in_(["queued", "running"]))).all()
         for job in jobs:
             job.status = "interrupted"
-            job.stage = "Interrupted by restart"
-            job.error = ("The server stopped while this import was running. No data from it was committed. "
-                         "Start the import again from the import wizard.")
+            job.stage = "job.stage.interrupted"
+            job.error = t("en", "job.error.interrupted")
+            job.error_key = "job.error.interrupted"
+            job.error_params = {}
             job.updated_at = utcnow()
         if jobs:
             log.warning("Marked %d unfinished job(s) as interrupted", len(jobs))

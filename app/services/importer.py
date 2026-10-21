@@ -30,6 +30,7 @@ from app.services.ingestion import (
     stage_upload,
 )
 from app.services.validation import ValidationResult, preview_records, validate_table
+from app.i18n import render, t
 
 log = logging.getLogger("processlens.import")
 
@@ -38,7 +39,12 @@ SUMMARY_FINDINGS = 200
 
 
 class ImportRejected(Exception):
-    pass
+    """Import refused for a reason the user can fix. Message = catalog entry ``key``."""
+
+    def __init__(self, key: str, **params):
+        self.key = key
+        self.params = params
+        super().__init__(t("en", key, **params))
 
 
 # --------------------------------------------------------------------------- uploads
@@ -89,12 +95,16 @@ def run_validation(upload: Upload, options: ImportOptions, max_findings: int | N
     settings = get_settings()
     path = upload_path(upload)
     if not path.exists():
-        raise IngestionError("upload_missing", "The staged file is no longer available. Please upload it again.")
+        raise IngestionError("upload_missing")
     table = read_raw_table(path, options.encoding or upload.encoding, options.delimiter or upload.delimiter, settings)
     return validate_table(table, options.mapping, options.timestamps, max_findings=max_findings)
 
 
-def validation_summary(upload: Upload, result: ValidationResult) -> dict:
+def localized_findings(findings: list[dict], lang: str) -> list[dict]:
+    return [{**f, "message": render(lang, f.get("message_key"), f.get("message_params"), f["message"])} for f in findings]
+
+
+def validation_summary(upload: Upload, result: ValidationResult, lang: str = "en") -> dict:
     invalid = len(result.invalid_rows)
     file_errors = [f for f in result.findings if f["severity"] == "error" and f["row"] is None]
     return {
@@ -107,7 +117,7 @@ def validation_summary(upload: Upload, result: ValidationResult) -> dict:
         "warning_count": result.count("warning"),
         "info_count": result.count("info"),
         "counts_by_code": dict(result.counts_by_code),
-        "findings": result.findings[:SUMMARY_FINDINGS],
+        "findings": localized_findings(result.findings[:SUMMARY_FINDINGS], lang),
         "findings_truncated": len(result.findings) > SUMMARY_FINDINGS,
         "preview_rows": preview_records(result.normalized),
         "can_import_with_reject_policy": invalid == 0 and not file_errors and result.valid_rows > 0,
@@ -121,13 +131,13 @@ def start_import(db: Session, upload: Upload, request: ConfirmImportRequest, kin
     if request.target_dataset_id is not None and db.get(Dataset, request.target_dataset_id) is None:
         raise LookupError("Target dataset not found")
     job = ImportJob(
-        id=jobs.new_job_id(), kind=kind, status="queued", progress=0.0, stage="Queued",
+        id=jobs.new_job_id(), kind=kind, status="queued", progress=0.0, stage="job.stage.queued",
         upload_id=upload.id, target_dataset_id=request.target_dataset_id,
         options={"request": request.model_dump(mode="json"), **(extra or {})},
     )
     db.add(job)
     db.commit()
-    jobs.set_progress(job.id, 0.0, "Queued")
+    jobs.set_progress(job.id, 0.0, "job.stage.queued")
     jobs.submit(job.id, _run_import_job)
     return job
 
@@ -166,7 +176,7 @@ def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportReq
     if request.target_dataset_id is not None:
         ds = db.get(Dataset, request.target_dataset_id)
         if ds is None:
-            raise ImportRejected("The target dataset was deleted while the import was running.")
+            raise ImportRejected("import.target_deleted")
         db.execute(delete(Event).where(Event.dataset_id == ds.id))
         db.execute(delete(ImportFinding).where(ImportFinding.dataset_id == ds.id))
         db.execute(delete(QuarantinedRow).where(QuarantinedRow.dataset_id == ds.id))
@@ -209,8 +219,8 @@ def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportReq
     total = max(len(records), 1)
     for i in range(0, len(records), INSERT_CHUNK):
         db.execute(insert(Event), records[i:i + INSERT_CHUNK])
-        jobs.set_progress(job_id, 0.35 + 0.5 * min(i + INSERT_CHUNK, total) / total,
-                          f"Writing events ({min(i + INSERT_CHUNK, total):,} / {total:,})")
+        jobs.set_progress(job_id, 0.35 + 0.5 * min(i + INSERT_CHUNK, total) / total, "job.stage.writing",
+                          done=f"{min(i + INSERT_CHUNK, total):,}", total=f"{total:,}")
 
     finding_rows = [{"dataset_id": ds.id, "dataset_version": ds.version, **f} for f in result.findings]
     for i in range(0, len(finding_rows), INSERT_CHUNK):
@@ -246,27 +256,25 @@ def _run_import_job(job_id: str) -> None:
         if job is None:
             return
         job.status = "running"
-        job.stage = "Reading file"
+        job.stage = "job.stage.reading"
         db.commit()
         request = ConfirmImportRequest.model_validate(job.options["request"])
         is_demo = bool(job.options.get("demo"))
         upload = db.get(Upload, job.upload_id)
         if upload is None:
-            raise ImportRejected("The staged upload no longer exists. Please upload the file again.")
+            raise ImportRejected("error.upload_missing")
 
-        jobs.set_progress(job_id, 0.05, "Reading and validating rows")
+        jobs.set_progress(job_id, 0.05, "job.stage.reading")
         result = run_validation(upload, request, max_findings=get_settings().max_findings_stored)
-        jobs.set_progress(job_id, 0.3, "Validation finished")
+        jobs.set_progress(job_id, 0.3, "job.stage.validated")
         file_errors = [f for f in result.findings if f["severity"] == "error" and f["row"] is None]
         if file_errors:
-            raise ImportRejected(file_errors[0]["message"])
+            raise ImportRejected(file_errors[0]["message_key"], **file_errors[0]["message_params"])
         if result.invalid_rows and request.invalid_row_policy == "reject_import":
-            raise ImportRejected(
-                f"Import rejected: {len(result.invalid_rows):,} of {result.total_rows:,} rows are invalid. "
-                "Fix the file, adjust the mapping/timestamp options, or choose the quarantine policy."
-            )
+            raise ImportRejected("import.rejected_invalid", invalid=f"{len(result.invalid_rows):,}",
+                                 total=f"{result.total_rows:,}")
         if result.valid_rows == 0:
-            raise ImportRejected("No valid rows remain after validation; nothing was imported.")
+            raise ImportRejected("import.no_valid_rows")
 
         ds = _persist(db, job_id, upload, request, result, is_demo, job.options.get("description"))
         db.commit()
@@ -277,29 +285,35 @@ def _run_import_job(job_id: str) -> None:
 
         job_result: dict = {"dataset_id": dataset_id, "version": version, "events": ds.event_count,
                             "cases": ds.case_count, "quarantined_rows": ds.quarantined_count}
-        jobs.set_progress(job_id, 0.9, "Evaluating alert rules")
+        jobs.set_progress(job_id, 0.9, "job.stage.alerts")
         try:
             if is_demo:
                 from app.services.demo import create_demo_rules
-                create_demo_rules(db, ds)
+                create_demo_rules(db, ds, job.options.get("lang", "en"))
             from app.services.alerts import evaluate_alert_rules
             job_result["alerts"] = evaluate_alert_rules(db, ds)
         except Exception:  # alert evaluation must not undo a committed import
             db.rollback()
             log.exception("Post-import alert evaluation failed for dataset %s", dataset_id)
-            job_result["alerts_error"] = "Alert evaluation failed after import; run it again from the Alerts page."
-        _finish_job(job_id, status="succeeded", progress=1.0, stage="Completed", dataset_id=dataset_id,
+            job_result["alerts_error_key"] = "import.alerts_failed"
+        _finish_job(job_id, status="succeeded", progress=1.0, stage="job.stage.completed", dataset_id=dataset_id,
                     result=job_result)
-    except (ImportRejected, IngestionError, ValueError) as exc:
+    except (ImportRejected, IngestionError) as exc:
         db.rollback()
-        msg = exc.message if isinstance(exc, IngestionError) else str(exc)
+        key = exc.key if isinstance(exc, ImportRejected) else f"error.{exc.code}"
         log.info("Import job %s rejected", job_id)
-        _finish_job(job_id, status="failed", stage="Rejected", error=msg)
+        _finish_job(job_id, status="failed", stage="job.stage.rejected", error=str(exc), error_key=key,
+                    error_params=exc.params)
+    except ValueError as exc:  # e.g. a mapped column missing after an encoding/delimiter change
+        db.rollback()
+        log.info("Import job %s rejected (invalid options)", job_id)
+        _finish_job(job_id, status="failed", stage="job.stage.rejected", error=str(exc),
+                    error_key="import.invalid_options", error_params={"detail": str(exc)})
     except Exception:
         db.rollback()
         log.exception("Import job %s failed", job_id)
-        _finish_job(job_id, status="failed", stage="Failed",
-                    error="The import failed due to an internal error. No data was committed; see server logs.")
+        _finish_job(job_id, status="failed", stage="job.stage.failed", error=t("en", "import.internal_error"),
+                    error_key="import.internal_error", error_params={})
     finally:
         db.close()
         jobs.clear_progress(job_id)

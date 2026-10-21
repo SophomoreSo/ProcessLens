@@ -9,13 +9,14 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import build_view, filter_params, get_dataset
+from app.api.deps import build_view, filter_params, get_dataset, request_lang
 from app.database import get_db
 from app.errors import AppError, not_found
 from app.models import Alert, AlertRule, ConformanceRule, Dataset, Event
 from app.schemas.filters import FilterSpec
 from app.services import analytics
-from app.services.conformance import evaluate_rule
+from app.i18n import render
+from app.services.conformance import evaluate_rule, explain
 from app.services.exports import EVENT_EXPORT_COLUMNS, events_for_export, to_csv, to_json, write_xes
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/exports", tags=["exports"])
@@ -42,7 +43,7 @@ def export_xes(background: BackgroundTasks, ds: Dataset = Depends(get_dataset),
                spec: FilterSpec = Depends(filter_params), db: Session = Depends(get_db)):
     _, view = build_view(db, ds, spec)
     if view.case_count == 0:
-        raise AppError(422, "empty_population", "No cases match the filters; nothing to export.")
+        raise AppError(422, "empty_population")
     path = write_xes(view.events)
     background.add_task(path.unlink, missing_ok=True)
     return FileResponse(path, media_type="application/xml",
@@ -55,13 +56,13 @@ def export(kind: str = Path(..., pattern="^(cases|events|variants|transitions|su
            fmt: str = Path(..., pattern="^(csv|json)$"),
            rule_id: int | None = Query(None, description="Required for kind=conformance"),
            ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
-           db: Session = Depends(get_db)):
+           db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     log, view = build_view(db, ds, spec)
     name = f"processlens_{ds.id}_v{ds.version}_{kind}"
 
     if kind == "summary":
         if fmt == "csv":
-            raise AppError(422, "unsupported_format", "The summary export is available as JSON only.")
+            raise AppError(422, "unsupported_format")
         return _download(to_json({**_meta(ds, view, kind), "overview": analytics.overview(view)}), fmt, name)
 
     if kind == "cases":
@@ -92,13 +93,13 @@ def export(kind: str = Path(..., pattern="^(cases|events|variants|transitions|su
                    "p90_elapsed_s"]
     elif kind == "conformance":
         if rule_id is None:
-            raise AppError(422, "missing_parameter", "rule_id is required for conformance exports")
+            raise AppError(422, "missing_parameter", name="rule_id")
         rule = db.get(ConformanceRule, rule_id)
         if rule is None or rule.dataset_id != ds.id:
-            raise not_found("Conformance rule")
+            raise not_found("conformance_rule")
         res = evaluate_rule(log, rule).reindex(view.cases.index)
         rows = [{"case_id": cid, "rule_id": rule.id, "rule_name": rule.name, "result": r["result"],
-                 "explanation": r["explanation"], "case_status": view.cases.at[cid, "status"]}
+                 "explanation": explain(r, lang), "case_status": view.cases.at[cid, "status"]}
                 for cid, r in res.iterrows()]
         columns = ["case_id", "rule_id", "rule_name", "result", "explanation", "case_status"]
     else:  # alerts (restricted to cases in the filtered population)
@@ -106,7 +107,8 @@ def export(kind: str = Path(..., pattern="^(cases|events|variants|transitions|su
         q = (select(Alert, AlertRule.name).join(AlertRule, AlertRule.id == Alert.alert_rule_id)
              .where(Alert.dataset_id == ds.id).order_by(Alert.id))
         rows = [{"alert_id": a.id, "rule_name": n, "case_id": a.case_id, "status": a.status, "severity": a.severity,
-                 "condition_active": a.condition_active, "message": a.message,
+                 "condition_active": a.condition_active,
+                 "message": render(lang, a.message_key, a.message_params, fallback=a.message),
                  "first_detected_at": a.first_detected_at.isoformat(), "last_evaluated_at": a.last_evaluated_at.isoformat()}
                 for a, n in db.execute(q).all() if a.case_id in keep]
         columns = ["alert_id", "rule_name", "case_id", "status", "severity", "condition_active", "message",

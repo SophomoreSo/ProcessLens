@@ -1,4 +1,4 @@
-from app.models.dataset import Dataset, Event, ImportFinding, ImportJob, QuarantinedRow, Upload
+from app.models.dataset import Dataset, Event, ImportFinding, ImportJob, QuarantinedRow, Upload, UserPreferences
 from app.models.rules import Alert, AlertRule, ConformanceRule
 
 __all__ = [
@@ -11,4 +11,5 @@ __all__ = [
     "ImportJob",
     "QuarantinedRow",
     "Upload",
+    "UserPreferences",
 ]

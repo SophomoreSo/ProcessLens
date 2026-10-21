@@ -130,8 +130,11 @@ class ImportFinding(Base):
     row: Mapped[int | None] = mapped_column(Integer, nullable=True)
     field: Mapped[str | None] = mapped_column(String(100), nullable=True)
     case_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    message: Mapped[str] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text)  # English rendering (kept for exports/fallback)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Translatable form of the message: catalog key + parameters (rendered per request language).
+    message_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    message_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class QuarantinedRow(Base):
@@ -163,5 +166,18 @@ class ImportJob(Base):
     options: Mapped[dict] = mapped_column(JSON, default=dict)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class UserPreferences(Base):
+    """Settings of the (single) local user. Always the row with id 1."""
+
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    language: Mapped[str] = mapped_column(String(8), default="en")  # en | ko | pl
+    motion: Mapped[str] = mapped_column(String(10), default="system")  # system | on | off
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

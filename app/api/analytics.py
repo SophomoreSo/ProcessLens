@@ -6,13 +6,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import build_view, filter_params, get_dataset, rule_getter
+from app.api.deps import build_view, filter_params, get_dataset, request_lang, rule_getter
 from app.database import get_db
 from app.errors import AppError, not_found
 from app.models import ConformanceRule, Dataset, Event
 from app.schemas.filters import FilterSpec
 from app.services import analytics
-from app.services.conformance import describe_rule, evaluate_rule, lookup_factory
+from app.services.conformance import describe_rule, evaluate_rule, explain, lookup_factory
 from app.services.filtering import intersect
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}", tags=["analytics"])
@@ -64,9 +64,9 @@ def filter_options(ds: Dataset = Depends(get_dataset), db: Session = Depends(get
 
 @router.get("/graph", summary="Directly-follows graph (not a BPMN model)")
 def graph(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
-          db: Session = Depends(get_db)):
+          db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     _, view = build_view(db, ds, spec)
-    return _envelope(ds, view, analytics.process_graph(view))
+    return _envelope(ds, view, analytics.with_notes(analytics.process_graph(view), lang))
 
 
 @router.get("/variants", summary="Process variants ranked by case count")
@@ -87,10 +87,11 @@ def cases(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_
 
 
 @router.get("/cases/{case_id:path}", summary="Case detail: full event timeline and conformance findings")
-def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db)):
+def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db),
+                lang: str = Depends(request_lang)):
     log, _ = build_view(db, ds, FilterSpec())
     if case_id not in log.cases.index:
-        raise not_found("Case")
+        raise not_found("case")
     rec = log.cases.loc[case_id].to_dict()
     rec["case_id"] = case_id
     summary = analytics.case_summary(rec, log.variants["label"])
@@ -118,8 +119,8 @@ def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = 
                                                          ConformanceRule.enabled.is_(True)).order_by(ConformanceRule.id)):
         res = evaluate_rule(log, rule).loc[case_id]
         conformance.append({"rule_id": rule.id, "rule_name": rule.name,
-                            "rule": describe_rule(rule.rule_type, rule.params),
-                            "result": res["result"], "explanation": res["explanation"]})
+                            "rule": describe_rule(rule.rule_type, rule.params, lang),
+                            "result": res["result"], "explanation": explain(res, lang)})
     return {"dataset_id": ds.id, "dataset_version": ds.version, "display_timezone": ds.display_timezone,
             "case": summary, "events": events, "conformance": conformance,
             "has_timestamp_ties": any(e["tied_timestamp"] for e in events)}
@@ -127,9 +128,9 @@ def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = 
 
 @router.get("/performance", summary="Transition, resource and department performance")
 def performance(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
-                db: Session = Depends(get_db)):
+                db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     _, view = build_view(db, ds, spec)
-    return _envelope(ds, view, analytics.performance(view))
+    return _envelope(ds, view, analytics.with_notes(analytics.performance(view), lang))
 
 
 class CohortRequest(BaseModel):
@@ -141,7 +142,7 @@ class CohortRequest(BaseModel):
 
 @router.post("/performance/compare", summary="Compare two cohorts within the globally filtered population")
 def compare(body: CohortRequest, ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
-            db: Session = Depends(get_db)):
+            db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     log, base = build_view(db, ds, spec)
     lookup = lookup_factory(log, rule_getter(db, ds.id))
     try:
@@ -149,7 +150,7 @@ def compare(body: CohortRequest, ds: Dataset = Depends(get_dataset), spec: Filte
         b = intersect(base, body.b, lookup)
     except LookupError as exc:
         raise AppError(422, "invalid_filter", str(exc)) from None
-    data = analytics.compare_cohorts(base, a, b)
+    data = analytics.with_notes(analytics.compare_cohorts(base, a, b), lang)
     data["a"]["label"], data["b"]["label"] = body.label_a, body.label_b
     data["a"]["filters"], data["b"]["filters"] = body.a.normalized(), body.b.normalized()
     return _envelope(ds, base, data)

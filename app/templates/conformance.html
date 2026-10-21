@@ -2,15 +2,13 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Conformance</h1>
-    <p><b>Rule-based conformance</b>: each case is checked against configurable business rules. Results are
-      <span class="badge compliant">compliant</span>, <span class="badge violating">violating</span> or
-      <span class="badge not_evaluable">not evaluable</span> when the data cannot establish compliance (for example, the case is not
-      known to be complete, or events share a timestamp). Formal Petri-net replay or alignments are not part of this version.</p>
+    <h1>{{ t('nav.conformance') }}</h1>
+    <p>{{ t('cf.intro_1') }} <span class="badge compliant">{{ t('result.compliant') }}</span>, <span class="badge violating">{{ t('result.violating') }}</span>,
+      <span class="badge not_evaluable">{{ t('result.not_evaluable') }}</span> — {{ t('cf.intro_2') }}</p>
   </div>
-  <button type="button" class="btn btn-primary" id="new-rule">New rule</button>
+  <button type="button" class="btn btn-primary" id="new-rule">{{ t('cf.new_rule') }}</button>
 </div>
-<section class="card"><h2>Rules</h2><div id="rules-root"><div class="state"><span class="spinner"></span> Loading…</div></div></section>
+<section class="card"><h2>{{ t('cf.rules') }}</h2><div id="rules-root"><div class="state"><span class="spinner"></span> {{ t('common.loading') }}</div></div></section>
 <section class="card hidden" id="rule-editor"></section>
 <section class="card hidden" id="evaluation"></section>
 {% endblock %}

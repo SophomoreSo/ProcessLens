@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block topbar %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.settings') }}</h1>
+    <p>{{ t('set.intro') }}</p>
+  </div>
+</div>
+<form id="settings-form" class="settings-grid">
+  <section class="card">
+    <h2 id="lang-title">{{ t('set.language') }}</h2>
+    <p class="small muted">{{ t('set.language_note') }}</p>
+    <div class="actions" role="radiogroup" aria-labelledby="lang-title" style="flex-direction:column;align-items:stretch">
+      {% for code, name in languages.items() %}
+      <label class="choice"><input type="radio" name="language" value="{{ code }}" {% if code == lang %}checked{% endif %}>
+        <span><b lang="{{ code }}">{{ name }}</b><small>{{ t('set.lang.' ~ code) }}</small></span></label>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="card">
+    <h2 id="motion-title">{{ t('set.animations') }}</h2>
+    <p class="small muted">{{ t('set.animations_note') }}</p>
+    <div class="actions" role="radiogroup" aria-labelledby="motion-title" style="flex-direction:column;align-items:stretch">
+      {% for value in ['system', 'on', 'off'] %}
+      <label class="choice"><input type="radio" name="motion" value="{{ value }}" {% if value == motion %}checked{% endif %}>
+        <span><b>{{ t('set.motion.' ~ value) }}</b><small>{{ t('set.motion.' ~ value ~ '_hint') }}</small></span></label>
+      {% endfor %}
+    </div>
+    <p class="small muted" id="os-motion"></p>
+    <div class="notice" style="margin-top:8px">
+      <div class="motion-preview" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="small" id="motion-state"></span></div>
+    </div>
+  </section>
+  <div class="actions">
+    <button type="submit" class="btn btn-primary" id="save-settings">{{ t('common.save') }}</button>
+    <span class="small muted">{{ t('set.saved_where') }}</span>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="{{ url_for('static', path='js/settings.js') }}"></script>
+{% endblock %}

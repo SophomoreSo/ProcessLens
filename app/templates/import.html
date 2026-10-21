@@ -2,105 +2,104 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Import an event log</h1>
-    <p>Upload a CSV, map its columns to the event schema, choose how timestamps are read, review every validation
-      finding and then confirm. Nothing is imported until you confirm.</p>
+    <h1>{{ t('imp.title') }}</h1>
+    <p>{{ t('imp.intro') }}</p>
   </div>
 </div>
 <ol class="steps" id="steps">
-  <li data-step="1">Upload</li><li data-step="2">Preview &amp; mapping</li><li data-step="3">Timestamps</li>
-  <li data-step="4">Validation findings</li><li data-step="5">Confirm import</li>
+  <li data-step="1">{{ t('imp.step.upload') }}</li><li data-step="2">{{ t('imp.step.mapping') }}</li><li data-step="3">{{ t('imp.step.timestamps') }}</li>
+  <li data-step="4">{{ t('imp.step.findings') }}</li><li data-step="5">{{ t('imp.step.confirm') }}</li>
 </ol>
 
 <section class="card" data-panel="1">
-  <h2>1 · Upload a CSV file</h2>
+  <h2>1 · {{ t('imp.upload.title') }}</h2>
   <div class="dropzone" id="dropzone">
-    <p><b>Drop a CSV file here</b> or choose one.</p>
-    <input type="file" id="file-input" accept=".csv,.txt,.tsv,text/csv">
-    <p class="small muted">Required columns: case ID, activity, timestamp. Identifiers are read as text, so leading zeros are kept.</p>
+    <p><b>{{ t('imp.upload.drop') }}</b></p>
+    <input type="file" id="file-input" accept=".csv,.txt,.tsv,text/csv" aria-label="{{ t('imp.upload.choose') }}">
+    <p class="small muted">{{ t('imp.upload.required') }}</p>
   </div>
-  <p class="small muted">No file at hand? Download the <a href="/api/sample-data/p2p_demo_events.csv" download>synthetic demo log</a>
-    or the <a href="/api/sample-data/p2p_validation_demo.csv" download>validation demo with malformed rows</a>.</p>
+  <p class="small muted">{{ t('imp.upload.no_file') }}
+    <a href="/api/sample-data/p2p_demo_events.csv" download>{{ t('imp.upload.demo_log') }}</a> ·
+    <a href="/api/sample-data/p2p_validation_demo.csv" download>{{ t('imp.upload.validation_demo') }}</a></p>
   <div id="upload-status"></div>
 </section>
 
 <section class="card hidden" data-panel="2">
-  <div class="card-head"><h2>2 · Preview &amp; column mapping</h2><span id="file-info" class="small muted"></span></div>
+  <div class="card-head"><h2>2 · {{ t('imp.step.mapping') }}</h2><span id="file-info" class="small muted"></span></div>
   <div id="column-warnings"></div>
   <div class="form-grid">
-    <label>Encoding<select id="encoding"><option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8 with BOM</option>
+    <label>{{ t('imp.encoding') }}<select id="encoding"><option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8 (BOM)</option>
       <option value="cp1252">Windows-1252</option><option value="latin-1">Latin-1</option></select></label>
-    <label>Delimiter<select id="delimiter"><option value=",">Comma ,</option><option value=";">Semicolon ;</option>
-      <option value="\t">Tab</option><option value="|">Pipe |</option></select></label>
-    <div class="actions" style="align-self:end"><button type="button" class="btn" id="reparse">Re-read file</button></div>
+    <label>{{ t('imp.delimiter') }}<select id="delimiter"><option value=",">{{ t('imp.delim.comma') }} ,</option><option value=";">{{ t('imp.delim.semicolon') }} ;</option>
+      <option value="\t">{{ t('imp.delim.tab') }}</option><option value="|">{{ t('imp.delim.pipe') }} |</option></select></label>
+    <div class="actions" style="align-self:end"><button type="button" class="btn" id="reparse">{{ t('imp.reread') }}</button></div>
   </div>
-  <h3 style="margin-top:14px">Sample rows</h3>
+  <h3 style="margin-top:14px">{{ t('imp.sample_rows') }}</h3>
   <div id="sample-table"></div>
-  <h3 style="margin-top:14px">Map columns</h3>
+  <h3 style="margin-top:14px">{{ t('imp.map_columns') }}</h3>
   <div class="mapping-grid" id="mapping"></div>
-  <h3 style="margin-top:14px">Additional attributes to keep</h3>
+  <h3 style="margin-top:14px">{{ t('imp.attributes') }}</h3>
   <div class="chips" id="attributes"></div>
-  <div class="actions" style="margin-top:14px"><button type="button" class="btn btn-primary" id="to-step-3">Next: timestamps</button></div>
+  <div class="actions" style="margin-top:14px"><button type="button" class="btn btn-primary" id="to-step-3">{{ t('imp.next_timestamps') }}</button></div>
 </section>
 
 <section class="card hidden" data-panel="3">
-  <h2>3 · Timestamps</h2>
-  <p class="small muted">Timestamps with an explicit offset (e.g. <code>Z</code> or <code>+02:00</code>) use that offset. All others
-    are interpreted in the source timezone and converted to UTC.</p>
+  <h2>3 · {{ t('imp.step.timestamps') }}</h2>
+  <p class="small muted">{{ t('imp.ts.intro') }}</p>
   <div class="form-grid">
-    <label>Format<select id="ts-format"></select></label>
-    <label>Custom strftime pattern<input id="ts-custom" placeholder="%d/%m/%Y %H:%M"></label>
-    <label>Source timezone<select id="ts-tz"></select></label>
-    <label>Display timezone<select id="display-tz"></select></label>
-    <label>Ambiguous local times (DST fall-back)<select id="ts-ambiguous">
-      <option value="reject">Reject row (flag as invalid)</option><option value="earliest">Use earliest (DST) instant</option>
-      <option value="latest">Use latest (standard) instant</option></select></label>
-    <label>Nonexistent local times (DST spring-forward)<select id="ts-nonexistent">
-      <option value="reject">Reject row (flag as invalid)</option><option value="shift_forward">Shift forward to valid time</option>
-      <option value="shift_backward">Shift backward to valid time</option></select></label>
+    <label>{{ t('imp.ts.format') }}<select id="ts-format"></select></label>
+    <label>{{ t('imp.ts.custom') }}<input id="ts-custom" placeholder="%d/%m/%Y %H:%M"></label>
+    <label>{{ t('imp.ts.source_tz') }}<select id="ts-tz"></select></label>
+    <label>{{ t('imp.ts.display_tz') }}<select id="display-tz"></select></label>
+    <label>{{ t('imp.ts.ambiguous') }}<select id="ts-ambiguous">
+      <option value="reject">{{ t('imp.ts.reject_row') }}</option><option value="earliest">{{ t('imp.ts.earliest') }}</option>
+      <option value="latest">{{ t('imp.ts.latest') }}</option></select></label>
+    <label>{{ t('imp.ts.nonexistent') }}<select id="ts-nonexistent">
+      <option value="reject">{{ t('imp.ts.reject_row') }}</option><option value="shift_forward">{{ t('imp.ts.shift_forward') }}</option>
+      <option value="shift_backward">{{ t('imp.ts.shift_backward') }}</option></select></label>
   </div>
   <div id="format-scores" class="small muted" style="margin-top:8px"></div>
   <div class="actions" style="margin-top:14px">
-    <button type="button" class="btn" data-back="2">Back</button>
-    <button type="button" class="btn btn-primary" id="validate">Validate</button>
+    <button type="button" class="btn" data-back="2">{{ t('common.back') }}</button>
+    <button type="button" class="btn btn-primary" id="validate">{{ t('imp.validate') }}</button>
   </div>
 </section>
 
 <section class="card hidden" data-panel="4">
-  <div class="card-head"><h2>4 · Validation findings</h2>
-    <div class="actions"><a class="btn btn-sm" id="report-csv" download>Download report CSV</a>
-      <a class="btn btn-sm" id="report-json" download>Download report JSON</a></div></div>
+  <div class="card-head"><h2>4 · {{ t('imp.step.findings') }}</h2>
+    <div class="actions"><a class="btn btn-sm" id="report-csv" download>{{ t('imp.report_csv') }}</a>
+      <a class="btn btn-sm" id="report-json" download>{{ t('imp.report_json') }}</a></div></div>
   <div id="validation"></div>
   <div class="actions" style="margin-top:14px">
-    <button type="button" class="btn" data-back="3">Back</button>
-    <button type="button" class="btn btn-primary" id="to-step-5">Next: confirm</button>
+    <button type="button" class="btn" data-back="3">{{ t('common.back') }}</button>
+    <button type="button" class="btn btn-primary" id="to-step-5">{{ t('imp.next_confirm') }}</button>
   </div>
 </section>
 
 <section class="card hidden" data-panel="5">
-  <h2>5 · Confirm import</h2>
+  <h2>5 · {{ t('imp.step.confirm') }}</h2>
   <div class="form-grid">
-    <label>Import into<select id="target"><option value="">New dataset</option></select></label>
-    <label>Dataset name<input id="ds-name" maxlength="200"></label>
+    <label>{{ t('imp.target') }}<select id="target"><option value="">{{ t('imp.new_dataset') }}</option></select></label>
+    <label>{{ t('imp.dataset_name') }}<input id="ds-name" maxlength="200"></label>
   </div>
-  <fieldset style="margin-top:12px"><legend>Invalid rows</legend>
-    <label class="inline"><input type="radio" name="policy" value="reject_import" checked> Reject the import if any row is invalid</label><br>
-    <label class="inline"><input type="radio" name="policy" value="quarantine"> Import valid rows and quarantine invalid rows (kept aside with reasons, excluded from analysis)</label>
+  <fieldset style="margin-top:12px"><legend>{{ t('imp.invalid_rows') }}</legend>
+    <label class="inline"><input type="radio" name="policy" value="reject_import" checked> {{ t('imp.policy.reject') }}</label><br>
+    <label class="inline"><input type="radio" name="policy" value="quarantine"> {{ t('imp.policy.quarantine') }}</label>
   </fieldset>
-  <fieldset style="margin-top:12px"><legend>Case completion rule</legend>
-    <p class="small muted" style="margin-top:0">The last observed event is not proof that a case is finished. Without a rule, all cases are “unknown” and throughput metrics stay empty.</p>
+  <fieldset style="margin-top:12px"><legend>{{ t('imp.completion') }}</legend>
+    <p class="small muted" style="margin-top:0">{{ t('imp.completion_note') }}</p>
     <div class="form-grid">
-      <label>Rule<select id="completion-mode"><option value="none">None (status unknown)</option>
-        <option value="end_activity">Last event is an end activity</option><option value="case_status">Mapped case-status column</option></select></label>
-      <label>End activities (comma separated)<input id="end-activities" placeholder="e.g. Pay Invoice"></label>
-      <label>Completed status values<input id="done-values" placeholder="e.g. Completed, Closed"></label>
-      <label>Open status values<input id="open-values" placeholder="e.g. Open"></label>
-      <label>Reference time for open-case age (UTC, optional)<input type="datetime-local" step="1" id="ref-time"></label>
+      <label>{{ t('imp.completion_rule') }}<select id="completion-mode"><option value="none">{{ t('completion.none') }}</option>
+        <option value="end_activity">{{ t('completion.end_activity') }}</option><option value="case_status">{{ t('completion.case_status') }}</option></select></label>
+      <label>{{ t('imp.end_activities') }}<input id="end-activities" placeholder="{{ t('imp.end_activities_placeholder') }}"></label>
+      <label>{{ t('ds.settings.completed_values') }}<input id="done-values" placeholder="{{ t('completion.done_placeholder') }}"></label>
+      <label>{{ t('ds.settings.open_values') }}<input id="open-values" placeholder="{{ t('completion.open_placeholder') }}"></label>
+      <label>{{ t('imp.reference_time') }}<input type="datetime-local" step="1" id="ref-time"></label>
     </div>
   </fieldset>
   <div class="actions" style="margin-top:14px">
-    <button type="button" class="btn" data-back="4">Back</button>
-    <button type="button" class="btn btn-primary" id="confirm">Import now</button>
+    <button type="button" class="btn" data-back="4">{{ t('common.back') }}</button>
+    <button type="button" class="btn btn-primary" id="confirm">{{ t('imp.import_now') }}</button>
   </div>
   <div id="import-status" style="margin-top:12px"></div>
 </section>

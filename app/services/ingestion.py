@@ -18,6 +18,7 @@ from typing import BinaryIO
 import pandas as pd
 
 from app.config import Settings
+from app.i18n import t
 
 ALLOWED_EXTENSIONS = {".csv", ".txt", ".tsv"}
 SNIFF_BYTES = 256 * 1024
@@ -52,12 +53,16 @@ TIMESTAMP_FORMAT_CANDIDATES = [
 
 
 class IngestionError(Exception):
-    """A file-level problem that prevents parsing the upload."""
+    """A file-level problem that prevents parsing the upload.
 
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
+    The message is the catalog entry ``error.<code>`` rendered with ``params``.
+    """
+
+    def __init__(self, code: str, **params):
         self.code = code
-        self.message = message
+        self.params = params
+        self.message = t("en", f"error.{code}", **params)
+        super().__init__(self.message)
 
 
 @dataclass
@@ -76,7 +81,7 @@ class RawTable:
     source_rows: list[int]  # 1-based data row number for each frame row
     field_count_issues: dict[int, tuple[int, int]] = field(default_factory=dict)  # row -> (expected, actual)
     blank_lines: int = 0
-    column_warnings: list[str] = field(default_factory=list)
+    column_warnings: list[dict] = field(default_factory=list)
 
 
 def sanitize_display_filename(name: str | None) -> str:
@@ -90,7 +95,7 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
     """Stream an upload to a server-generated filename, enforcing the size limit."""
     ext = Path(original_filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise IngestionError("unsupported_file_type", f"Only CSV files are accepted (got extension {ext or 'none'!r}).")
+        raise IngestionError("unsupported_file_type", ext=ext or "-")
     settings.ensure_dirs()
     upload_id = uuid.uuid4().hex
     stored_name = f"{upload_id}.csv"
@@ -103,13 +108,11 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
             while chunk := stream.read(1024 * 1024):
                 if first_chunk:
                     if b"\x00" in chunk[:8192]:
-                        raise IngestionError("binary_file", "The file appears to be binary, not a text CSV file.")
+                        raise IngestionError("binary_file")
                     first_chunk = False
                 size += len(chunk)
                 if size > settings.max_upload_bytes:
-                    raise IngestionError(
-                        "file_too_large", f"The file exceeds the upload limit of {settings.max_upload_mb} MB."
-                    )
+                    raise IngestionError("file_too_large", limit_mb=settings.max_upload_mb)
                 hasher.update(chunk)
                 out.write(chunk)
     except BaseException:
@@ -117,7 +120,7 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
         raise
     if size == 0:
         path.unlink(missing_ok=True)
-        raise IngestionError("empty_file", "The uploaded file is empty.")
+        raise IngestionError("empty_file")
     return StagedFile(upload_id, stored_name, path, size, hasher.hexdigest())
 
 
@@ -142,19 +145,20 @@ def detect_delimiter(path: Path, encoding: str) -> str:
         return ","
 
 
-def _normalize_header(raw: list[str]) -> tuple[list[str], list[str]]:
-    warnings: list[str] = []
+def _normalize_header(raw: list[str]) -> tuple[list[str], list[dict]]:
+    """Returns column names and warnings as translatable ``{"key", "params"}`` dicts."""
+    warnings: list[dict] = []
     seen: dict[str, int] = {}
     out: list[str] = []
     for i, name in enumerate(raw, start=1):
         name = name.strip()
         if not name:
             name = f"column_{i}"
-            warnings.append(f"Column {i} has no name; it is shown as '{name}'.")
+            warnings.append({"key": "preview.unnamed_column", "params": {"index": i, "name": name}})
         if name in seen:
             seen[name] += 1
             new = f"{name} ({seen[name]})"
-            warnings.append(f"Duplicate column name '{name}' renamed to '{new}'.")
+            warnings.append({"key": "preview.duplicate_column", "params": {"name": name, "new": new}})
             name = new
         else:
             seen[name] = 1
@@ -175,10 +179,10 @@ def read_raw_table(path: Path, encoding: str, delimiter: str, settings: Settings
             try:
                 header_raw = next(reader)
             except StopIteration:
-                raise IngestionError("empty_file", "The file contains no header row.") from None
+                raise IngestionError("no_header") from None
             columns, col_warnings = _normalize_header(header_raw)
             if len(columns) > settings.max_columns:
-                raise IngestionError("too_many_columns", f"The file has {len(columns)} columns; the limit is {settings.max_columns}.")
+                raise IngestionError("too_many_columns", count=len(columns), limit=settings.max_columns)
             ncol = len(columns)
             data_row = 0
             for rec in reader:
@@ -187,27 +191,22 @@ def read_raw_table(path: Path, encoding: str, delimiter: str, settings: Settings
                     continue
                 data_row += 1
                 if data_row > settings.max_rows:
-                    raise IngestionError("too_many_rows", f"The file has more than {settings.max_rows:,} data rows (configurable limit).")
+                    raise IngestionError("too_many_rows", limit=f"{settings.max_rows:,}")
                 if len(rec) != ncol:
                     issues[data_row] = (ncol, len(rec))
                     rec = (rec + [""] * ncol)[:ncol]
                 for j, v in enumerate(rec):
                     if len(v) > settings.max_field_chars:
-                        raise IngestionError(
-                            "field_too_long",
-                            f"Row {data_row}, column '{columns[j]}' exceeds {settings.max_field_chars} characters.",
-                        )
+                        raise IngestionError("field_too_long", row=data_row, column=columns[j],
+                                             limit=settings.max_field_chars)
                 rows.append(rec)
                 source_rows.append(data_row)
                 if limit_rows is not None and data_row >= limit_rows:
                     break
     except UnicodeDecodeError as exc:
-        raise IngestionError(
-            "encoding_error",
-            f"The file is not valid {encoding} text (byte offset {exc.start}). Choose another encoding or re-save the file as UTF-8.",
-        ) from None
+        raise IngestionError("encoding_error", encoding=encoding, offset=exc.start) from None
     except csv.Error as exc:
-        raise IngestionError("csv_parse_error", f"The CSV could not be parsed: {exc}") from None
+        raise IngestionError("csv_parse_error", detail=str(exc)) from None
     frame = pd.DataFrame(rows, columns=columns, dtype=str) if rows else pd.DataFrame(columns=columns, dtype=str)
     return RawTable(columns, frame, source_rows, issues, blank, col_warnings)
 

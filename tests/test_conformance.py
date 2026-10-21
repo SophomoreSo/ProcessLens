@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from app.services.conformance import evaluate
+from app.services.conformance import evaluate, explain
 from app.services.eventlog import build_event_log
 
 T0 = pd.Timestamp("2024-01-01T00:00:00Z")
@@ -84,8 +84,9 @@ def test_max_duration_metrics():
     assert thr == {"fast": "compliant", "slow": "violating", "open_slow": "not_evaluable", "open_fast": "not_evaluable"}
     obs = results(log, "max_duration", max_hours=5, metric="observed_duration")
     assert obs == {"fast": "compliant", "slow": "violating", "open_slow": "violating", "open_fast": "compliant"}
-    expl = evaluate(log, "max_duration", {"max_hours": 5, "metric": "observed_duration"})["explanation"]
-    assert "not known to be complete" in expl["open_fast"]
+    res = evaluate(log, "max_duration", {"max_hours": 5, "metric": "observed_duration"})
+    assert "not known to be complete" in explain(res.loc["open_fast"], "en")
+    assert explain(res.loc["fast"], "en") == "2.0 h is within the 5.0 h limit."
 
 
 def test_start_and_end_activity_with_ties():
