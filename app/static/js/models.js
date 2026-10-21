@@ -156,6 +156,21 @@ function ocdfgElements(rep) {
   return els;
 }
 
+function taskDfgElements(rep) {
+  const els = [{ data: { id: "__s", kind: "marker", label: t("graph.start") } }, { data: { id: "__e", kind: "marker", label: t("graph.end") } }];
+  for (const nd of rep.nodes) {
+    els.push({ data: { id: `n:${nd.id}`, kind: "activity", label: `${nd.id}\n${fmtInt(nd.events)}`,
+      tip: [[t("model.activity"), nd.id], [t("task.events"), fmtInt(nd.events)], [t("task.sessions"), fmtInt(nd.sessions)],
+        [t("task.explicit_duration_mean"), nd.mean_explicit_duration_s === null ? t("task.no_explicit_duration") : fmtDur(nd.mean_explicit_duration_s)],
+        [t("task.events_with_duration"), fmtInt(nd.events_with_duration)]] } });
+  }
+  rep.start.forEach((s, i) => els.push({ data: { id: `s${i}`, source: "__s", target: `n:${s.activity}`, label: fmtInt(s.sessions) } }));
+  rep.end.forEach((s, i) => els.push({ data: { id: `x${i}`, source: `n:${s.activity}`, target: "__e", label: fmtInt(s.sessions) } }));
+  rep.edges.forEach((e, i) => els.push({ data: { id: `e${i}`, source: `n:${e.source}`, target: `n:${e.target}`, label: fmtInt(e.count),
+    tip: [[t("model.frequency"), fmtInt(e.count)], [t("task.sessions"), fmtInt(e.sessions)]] } }));
+  return els;
+}
+
 function colorStyle() {
   return [
     { selector: "node[color]", style: { "border-color": "data(color)" } },
@@ -186,6 +201,7 @@ export class ModelGraph {
     else if (rep.type === "transition_system") elements = tsElements(rep);
     else if (rep.type === "oc_petri_net") elements = ocpnElements(rep);
     else if (rep.type === "object_centric_dfg") elements = ocdfgElements(rep);
+    else if (rep.type === "task_dfg") elements = taskDfgElements(rep);
     else return false;
     this.cy = cytoscape({ container: this.container, elements, style: [...baseStyle(), ...colorStyle()], layout: layout(rankDir),
       wheelSensitivity: 0.25, minZoom: 0.1, maxZoom: 3 });
@@ -280,7 +296,7 @@ export function renderModel(host, rep, { height = 520 } = {}) {
   const prev = host._modelGraph;
   if (prev) prev.destroy();
   host._modelGraph = null;
-  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system", "oc_petri_net", "object_centric_dfg"].includes(rep.type)) {
+  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system", "oc_petri_net", "object_centric_dfg", "task_dfg"].includes(rep.type)) {
     const canvas = h("div", { class: "graph", style: { height: `${height}px` } });
     const controls = h("div", { class: "graph-controls" });
     clear(host, h("div", { class: "graph-wrap" }, canvas, controls));

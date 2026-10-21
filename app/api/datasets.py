@@ -5,7 +5,7 @@ import logging
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import request_lang
@@ -23,6 +23,7 @@ from app.models import (
     MiningRun,
     QuarantinedRow,
     ReferenceModel,
+    TaskLog,
 )
 from app.schemas.datasets import DatasetOut, DatasetUpdate, FindingOut
 from app.services.cache import cache
@@ -95,6 +96,7 @@ def delete_dataset(dataset_id: int, confirm_name: str = Query(..., description="
     db.execute(delete(MiningArtifact).where(MiningArtifact.run_id.in_(run_ids)))
     db.execute(delete(MiningRun).where(MiningRun.dataset_id == ds.id))
     db.execute(delete(ReferenceModel).where(ReferenceModel.dataset_id == ds.id))
+    db.execute(update(TaskLog).where(TaskLog.linked_dataset_id == ds.id).values(linked_dataset_id=None))
     for model in (Alert, AlertRule, ConformanceRule, Event, ImportFinding, QuarantinedRow):
         db.execute(delete(model).where(model.dataset_id == ds.id))
     db.delete(ds)

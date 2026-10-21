@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.tasks') }}</h1>
+    <p>{{ t('task.intro') }}</p>
+  </div>
+</div>
+<section class="card">
+  <div class="grid-2">
+    <div>
+      <h2>{{ t('task.logs') }}</h2>
+      <div class="actions">
+        <select id="log-select" aria-label="{{ t('task.logs') }}"></select>
+        <button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>
+      </div>
+      <div id="log-info" class="small" style="margin-top:8px"></div>
+    </div>
+    <div>
+      <h2>{{ t('task.import') }}</h2>
+      <form id="preview-form" class="actions">
+        <input type="file" id="task-file" accept=".csv,text/csv" required>
+        <button type="submit" class="btn btn-sm">{{ t('task.read_columns') }}</button>
+        <button type="button" class="btn btn-sm" id="load-demo">{{ t('task.load_demo') }}</button>
+      </form>
+      <form id="mapping-form" class="hidden" style="margin-top:8px">
+        <div class="form-grid" id="mapping-fields"></div>
+        <div class="form-grid" style="margin-top:8px">
+          <label>{{ t('task.source_timezone') }}<input type="text" id="task-tz" value="UTC"></label>
+          <label>{{ t('task.invalid_rows') }}<select id="task-policy">
+            <option value="reject_import">{{ t('task.policy.reject_import') }}</option>
+            <option value="skip_invalid">{{ t('task.policy.skip_invalid') }}</option></select></label>
+        </div>
+        <div class="actions" style="margin-top:8px"><button type="submit" class="btn btn-primary btn-sm">{{ t('task.import_button') }}</button></div>
+      </form>
+      <p class="small muted">{{ t('task.privacy_note') }}</p>
+      <div id="upload-status"></div>
+    </div>
+  </div>
+</section>
+<div id="task-body" class="hidden">
+  <section class="card">
+    <h2>{{ t('task.sessionization') }}</h2>
+    <div class="form-grid">
+      <label>{{ t('task.session_mode') }}<select id="sess-mode">
+        <option value="source_and_inactivity">{{ t('task.mode.source_and_inactivity') }}</option>
+        <option value="source">{{ t('task.mode.source') }}</option>
+        <option value="inactivity">{{ t('task.mode.inactivity') }}</option></select></label>
+      <label>{{ t('task.gap_minutes') }}<input type="number" id="sess-gap" min="1" max="1440" step="1" value="30"></label>
+      <label>{{ t('task.granularity') }}<select id="granularity">
+        <option value="action">{{ t('task.gran.action') }}</option>
+        <option value="application">{{ t('task.gran.application') }}</option></select></label>
+    </div>
+    <p class="small muted">{{ t('task.session_note') }}</p>
+    <div id="kpis" class="kpis" style="margin-top:10px"></div>
+    <p class="small muted" style="margin-top:8px">{{ t('task.time_note') }}</p>
+  </section>
+  <section class="card">
+    <div class="tabs" role="tablist" id="task-tabs">
+      <button type="button" class="tab" role="tab" data-tab="variants">{{ t('task.tab.variants') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="sequences">{{ t('task.tab.sequences') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="switches">{{ t('task.tab.switches') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="dfg">{{ t('task.tab.dfg') }}</button>
+      <button type="button" class="tab" role="tab" data-tab="cases">{{ t('task.tab.cases') }}</button>
+    </div>
+    <div data-panel="variants"><div id="variants-view"></div></div>
+    <div data-panel="sequences" class="hidden">
+      <div class="form-grid">
+        <label>{{ t('task.min_length') }}<input type="number" id="seq-min" min="2" max="10" value="2"></label>
+        <label>{{ t('task.max_length') }}<input type="number" id="seq-max" min="2" max="10" value="5"></label>
+        <label>{{ t('task.min_sessions') }}<input type="number" id="seq-sessions" min="1" value="2"></label>
+      </div>
+      <p class="small muted">{{ t('task.sequences_note') }}</p>
+      <div id="sequences-view"></div>
+    </div>
+    <div data-panel="switches" class="hidden"><div id="switches-view"></div></div>
+    <div data-panel="dfg" class="hidden"><p class="small muted">{{ t('task.dfg_frequency_only') }}</p><div id="dfg-view"></div></div>
+    <div data-panel="cases" class="hidden">
+      <label>{{ t('task.linked_dataset') }}<select id="link-dataset"></select></label>
+      <div id="cases-view" style="margin-top:8px"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "_cytoscape.html" %}
+<script type="module" src="{{ url_for('static', path='js/tasks.js') }}"></script>
+{% endblock %}

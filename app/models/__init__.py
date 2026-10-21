@@ -2,6 +2,7 @@ from app.models.dataset import Dataset, Event, ImportFinding, ImportJob, Quarant
 from app.models.mining import MiningArtifact, MiningRun, ReferenceModel
 from app.models.ocel import OcelE2O, OcelEvent, OcelLog, OcelO2O, OcelObject, OcelObjectAttribute
 from app.models.rules import Alert, AlertRule, ConformanceRule
+from app.models.tasks import TaskEvent, TaskLog
 
 __all__ = [
     "Alert",
@@ -21,6 +22,8 @@ __all__ = [
     "OcelObjectAttribute",
     "QuarantinedRow",
     "ReferenceModel",
+    "TaskEvent",
+    "TaskLog",
     "Upload",
     "UserPreferences",
 ]

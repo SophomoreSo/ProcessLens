@@ -32,6 +32,7 @@ PAGES = [
     ("compare", "/compare"),
     ("|", "beyond"),
     ("ocel", "/ocel"),
+    ("tasks", "/tasks"),
     ("|", "data"),
     ("datasets", "/datasets"),
     ("import", "/import"),

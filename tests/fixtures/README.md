@@ -49,3 +49,17 @@ cost over unique events 33 (a per-relationship sum would give 78). OC-DFG for
 package 2 object transitions but only 1 unique event pair (e6 → e8). Flattening
 by `item`: 3 cases, 11 rows from 8 unique events (3 duplicated rows).
 Object o1 changes `status` from `placed` to `shipped`.
+
+# Task-event fixture: `task_events_small.csv`
+
+Two pseudonymous users, 11 events, exported sessions s1 (u1, 4 events, with a
+58-minute gap before `ERP Post`), s2 (u1, 3 events) and s3 (u2, 4 events). The
+`window_title` column is not mapped and must not be stored. Explicit durations
+exist for 3 events (10 + 30 + 5 = 45 s).
+
+Expected (asserted in `tests/test_tasks.py`): sessions — `source` 3,
+`source_and_inactivity` (30 min) 4, `inactivity` 30 min 3, 120 min 2.
+Variants (source, action level): Email·Open → PDF·View → ERP·Enter → ERP·Post
+in 2 sessions, the same without ERP·Post in 1. Repeated sequences (≥ 2
+sessions): the 3-step prefix (3 sessions) and the 4-step sequence (2 sessions).
+Application switches: 6 of 8 consecutive steps; Email→PDF 3, PDF→ERP 3.

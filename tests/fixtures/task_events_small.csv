@@ -1,0 +1,12 @@
+session_id,timestamp,application,action,pseudonymous_user_id,business_case_id,duration,window_title
+s3,2024-01-01T09:00:00Z,Email,Open,u2,C3,,Inbox
+s3,2024-01-01T09:01:00Z,PDF,View,u2,C3,,invoice.pdf
+s3,2024-01-01T09:02:00Z,ERP,Enter,u2,C3,,ERP
+s3,2024-01-01T09:03:00Z,ERP,Post,u2,C3,,ERP
+s1,2024-01-01T09:00:00Z,Email,Open,u1,C1,10,Inbox
+s1,2024-01-01T09:01:00Z,PDF,View,u1,C1,,invoice.pdf
+s1,2024-01-01T09:02:00Z,ERP,Enter,u1,C1,30,ERP
+s1,2024-01-01T10:00:00Z,ERP,Post,u1,C1,5,ERP
+s2,2024-01-01T10:05:00Z,Email,Open,u1,C2,,Inbox
+s2,2024-01-01T10:06:00Z,PDF,View,u1,C2,,other.pdf
+s2,2024-01-01T10:07:00Z,ERP,Enter,u1,C2,,ERP
