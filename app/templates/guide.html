@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.guide') }}</h1>
+    <p>{{ t('guide.intro') }}</p>
+  </div>
+</div>
+<div class="split">
+  <section class="card">
+    <h2>{{ t('guide.questions') }}</h2>
+    <div id="question-list" class="question-list" role="radiogroup" aria-label="{{ t('guide.questions') }}"></div>
+  </section>
+  <section class="card">
+    <h2 id="q-title">{{ t('guide.pick_question') }}</h2>
+    <p id="q-desc" class="small muted"></p>
+    <div id="q-source" style="margin-top:8px"></div>
+    <form id="q-params" class="form-grid" style="margin-top:8px"></form>
+    <div class="actions" style="margin-top:10px"><button type="button" class="btn btn-primary" id="ask" disabled>{{ t('guide.answer') }}</button></div>
+  </section>
+</div>
+<section class="card hidden" id="answer-card" aria-live="polite"></section>
+{% endblock %}
+{% block scripts %}
+{% include "_plotly.html" %}
+<script type="module" src="{{ url_for('static', path='js/guide.js') }}"></script>
+{% endblock %}

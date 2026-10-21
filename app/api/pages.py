@@ -21,6 +21,7 @@ router = APIRouter(include_in_schema=False)
 # Entries with key "|" are navigation group headings (nav.group.<path>), not pages.
 PAGES = [
     ("overview", "/"),
+    ("guide", "/guide"),
     ("process", "/process"),
     ("variants", "/variants"),
     ("cases", "/cases"),

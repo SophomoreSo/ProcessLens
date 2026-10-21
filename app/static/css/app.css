@@ -367,3 +367,14 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 .timeline li::before { content: ""; position: absolute; left: -21px; top: 11px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
 .obj-link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Guided analysis */
+.question-list { display: grid; gap: 8px; }
+.question { text-align: left; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; cursor: pointer; color: inherit; font: inherit; }
+.question:hover { border-color: var(--accent); }
+.question[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.question .q-title { font-weight: 600; }
+.answer-headline { font-size: 1.15rem; font-weight: 600; margin: 4px 0 10px; }
+.answer-meta { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); margin-bottom: 12px; }
+.answer-meta > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
+.answer-chart { height: 360px; }

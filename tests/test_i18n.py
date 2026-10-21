@@ -15,7 +15,7 @@ from tests.conftest import HAND_CHECK, HAND_MAPPING, HAND_OPTIONS, run_import
 
 LOCALES = PROJECT_ROOT / "app" / "i18n" / "locales"
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
-PAGES = ["/", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts", "/discovery", "/compare",
+PAGES = ["/", "/guide", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts", "/discovery", "/compare",
          "/ocel", "/tasks", "/datasets", "/import", "/settings"]
 
 
