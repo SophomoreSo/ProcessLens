@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.discovery') }}</h1>
+    <p>{{ t('disc.intro') }}</p>
+  </div>
+</div>
+<div class="split">
+  <section class="card">
+    <h2>{{ t('disc.algorithm') }}</h2>
+    <label>{{ t('disc.choose_algorithm') }}<select id="algorithm"></select></label>
+    <div id="algo-info" class="small" style="margin-top:8px"></div>
+    <form id="param-form" class="form-grid" style="margin-top:10px"></form>
+    <div class="form-grid" style="margin-top:10px">
+      <label>{{ t('disc.timeout') }}<input type="number" id="timeout" min="1" max="3600" step="1" value="300"></label>
+      <label class="inline" style="align-self:end"><input type="checkbox" id="force"> {{ t('disc.force') }}</label>
+    </div>
+    <p class="small muted">{{ t('disc.population_note') }}</p>
+    <div class="actions"><button type="button" class="btn btn-primary" id="run-discovery">{{ t('disc.run') }}</button></div>
+    <div id="run-status" style="margin-top:10px"></div>
+  </section>
+  <section class="card">
+    <h2>{{ t('disc.history') }}</h2>
+    <div id="history"></div>
+  </section>
+</div>
+<section class="card hidden" id="result-card"></section>
+<section class="card hidden" id="conformance-card"></section>
+<section class="card" id="reference-card">
+  <div class="card-head"><h2>{{ t('ref.title') }}</h2></div>
+  <p class="small muted">{{ t('ref.intro') }}</p>
+  <div id="references"></div>
+  <form id="ref-upload" class="form-grid" style="margin-top:10px">
+    <label>{{ t('ref.upload_file') }}<input type="file" name="file" accept=".pnml,.ptml" required></label>
+    <label>{{ t('common.name') }}<input name="name" maxlength="200" required></label>
+    <label>{{ t('ref.note') }}<input name="note" maxlength="2000"></label>
+    <div class="actions" style="align-self:end"><button type="submit" class="btn">{{ t('ref.upload') }}</button></div>
+  </form>
+  <div id="ref-status"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+{% include "_cytoscape.html" %}
+<script type="module" src="{{ url_for('static', path='js/discovery.js') }}"></script>
+{% endblock %}

@@ -17,7 +17,8 @@ from app.services.preferences import get_prefs
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
 router = APIRouter(include_in_schema=False)
 
-# (template / nav key, path). Labels come from the catalog: nav.<key>
+# (template / nav key, path). Labels come from the catalog: nav.<key>.
+# Entries with key "|" are navigation group headings (nav.group.<path>), not pages.
 PAGES = [
     ("overview", "/"),
     ("process", "/process"),
@@ -26,6 +27,10 @@ PAGES = [
     ("performance", "/performance"),
     ("conformance", "/conformance"),
     ("alerts", "/alerts"),
+    ("|", "mining"),
+    ("discovery", "/discovery"),
+    ("compare", "/compare"),
+    ("|", "data"),
     ("datasets", "/datasets"),
     ("import", "/import"),
     ("settings", "/settings"),
@@ -51,4 +56,6 @@ def _make(page: str):
 
 
 for _page, _path in PAGES:
+    if _page == "|":
+        continue
     router.add_api_route(_path, _make(_page), methods=["GET", "HEAD"], response_class=HTMLResponse)

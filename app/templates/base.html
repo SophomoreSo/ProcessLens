@@ -25,9 +25,9 @@
     </a>
     <ul class="nav">
       {% for key, path in pages %}
-        {% if key == 'datasets' %}<li class="sep" role="separator"></li>{% endif %}
-        <li><a href="{{ path }}" data-keep-query {% if key == page %}aria-current="page"{% endif %}>{{ t('nav.' ~ key) }}
-          {% if key == 'alerts' %}<span class="nav-badge hidden" id="nav-alert-badge" title="{{ t('nav.open_alerts') }}"></span>{% endif %}</a></li>
+        {% if key == '|' %}<li class="nav-group" role="presentation">{{ t('nav.group.' ~ path) }}</li>
+        {% else %}<li><a href="{{ path }}" data-keep-query {% if key == page %}aria-current="page"{% endif %}>{{ t('nav.' ~ key) }}
+          {% if key == 'alerts' %}<span class="nav-badge hidden" id="nav-alert-badge" title="{{ t('nav.open_alerts') }}"></span>{% endif %}</a></li>{% endif %}
       {% endfor %}
     </ul>
     <div class="sidebar-foot">

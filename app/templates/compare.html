@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.compare') }}</h1>
+    <p>{{ t('cmp2.intro') }}</p>
+  </div>
+</div>
+<section class="card">
+  <h2>{{ t('cmp2.setup') }}</h2>
+  <div id="algo-choices" class="algo-choices"></div>
+  <div class="grid-2" style="margin-top:12px">
+    <fieldset><legend>{{ t('cmp2.split') }}</legend>
+      <label class="inline"><input type="checkbox" id="split-enabled" checked> {{ t('cmp2.split_enabled') }}</label>
+      <div class="form-grid" style="margin-top:8px">
+        <label>{{ t('cmp2.train_ratio') }}<input type="number" id="train-ratio" min="0.05" max="0.95" step="0.05" value="0.7"></label>
+        <label>{{ t('cmp2.seed') }}<input type="number" id="seed" min="0" step="1" value="42"></label>
+      </div>
+      <p class="small muted">{{ t('cmp2.split_note') }}</p>
+    </fieldset>
+    <fieldset><legend>{{ t('cmp2.evaluation') }}</legend>
+      <div class="actions">
+        <label class="inline"><input type="checkbox" id="ev-tbr" checked> {{ t('method.token_replay') }}</label>
+        <label class="inline"><input type="checkbox" id="ev-align"> {{ t('method.alignments') }}</label>
+        <label class="inline"><input type="checkbox" id="ev-sound" checked> {{ t('method.soundness') }}</label>
+        <label class="inline"><input type="checkbox" id="ev-decl" checked> {{ t('cmp2.declarative') }}</label>
+        <label class="inline"><input type="checkbox" id="ev-prec" checked> {{ t('conf2.precision') }}</label>
+      </div>
+      <div class="form-grid" style="margin-top:8px">
+        <label>{{ t('conf2.max_variants') }}<input type="number" id="max-variants" min="1" value="2000"></label>
+        <label>{{ t('disc.timeout') }}<input type="number" id="cmp-timeout" min="1" max="3600" value="600"></label>
+      </div>
+    </fieldset>
+  </div>
+  <p class="small muted">{{ t('disc.population_note') }}</p>
+  <div class="actions"><button type="button" class="btn btn-primary" id="run-compare">{{ t('cmp2.run') }}</button></div>
+  <div id="cmp-status" style="margin-top:10px"></div>
+</section>
+<section class="card hidden" id="cmp-result"></section>
+<section class="card hidden" id="side-by-side">
+  <h2>{{ t('cmp2.side_by_side') }}</h2>
+  <div class="grid-2">
+    <div><select id="left-model"></select><div id="left-view" style="margin-top:8px"></div></div>
+    <div><select id="right-model"></select><div id="right-view" style="margin-top:8px"></div></div>
+  </div>
+</section>
+<section class="card"><h2>{{ t('cmp2.history') }}</h2><div id="cmp-history"></div></section>
+{% endblock %}
+{% block scripts %}
+{% include "_cytoscape.html" %}
+<script type="module" src="{{ url_for('static', path='js/compare.js') }}"></script>
+{% endblock %}

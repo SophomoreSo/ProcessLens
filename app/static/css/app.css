@@ -335,3 +335,24 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 .choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; color: var(--text); }
 .choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .choice small { display: block; color: var(--text-muted); }
+
+/* ===================================================================
+   Mining workspace (discovery, conformance, comparison)
+   =================================================================== */
+.nav-group { margin: 12px 10px 2px; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+.tab { border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; padding: 6px 12px; }
+.tab[aria-selected="true"] { border-color: var(--border); background: var(--surface-2); font-weight: 600; color: var(--accent-strong); }
+.prov { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: .85rem; }
+.prov dt { color: var(--text-muted); }
+.prov dd { margin: 0; overflow-wrap: anywhere; }
+.method-card h3 { margin: 0; }
+.algo-choices { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+.algo-choice { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--surface-2); }
+.algo-choice summary { cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.algo-choice form { margin-top: 8px; }
+.powl, .powl-po, .powl-op { font-size: .85rem; }
+.powl-po, .powl-op { border: 1px dashed var(--border-strong); border-radius: 8px; padding: 6px 10px; margin: 4px 0; }
+.powl-op > b { color: var(--accent-2); }
+.powl-children { margin: 4px 0; padding-left: 22px; }
+.powl .step { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px; }

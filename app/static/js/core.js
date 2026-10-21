@@ -148,7 +148,12 @@ const nf2 = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
 const pctFormats = {};
 
 export const fmtInt = (v) => (v === null || v === undefined ? "—" : nf.format(v));
-export const fmtNum = (v, d = 1) => (v === null || v === undefined ? "—" : (d === 2 ? nf2 : nf1).format(v));
+const nfCache = { 1: nf1, 2: nf2 };
+export function fmtNum(v, d = 1) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  nfCache[d] ||= new Intl.NumberFormat(LOCALE, { maximumFractionDigits: d });
+  return nfCache[d].format(v);
+}
 export function fmtPct(v, d = 1) {
   if (v === null || v === undefined) return "—";
   pctFormats[d] ||= new Intl.NumberFormat(LOCALE, { style: "percent", minimumFractionDigits: d, maximumFractionDigits: d });
