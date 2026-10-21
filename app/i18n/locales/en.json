@@ -1481,5 +1481,18 @@
   "guide.err.unknown_params": "Parameters not supported by this question: {params}",
   "guide.err.invalid_param": "Invalid value for {param}.",
   "guide.err.needs_dataset": "This question needs a dataset (dataset_id).",
-  "guide.err.needs_ocel": "This question needs an object-centric log (ocel_log_id)."
+  "guide.err.needs_ocel": "This question needs an object-centric log (ocel_log_id).",
+  "guest.badge": "Guest · read-only",
+  "guest.banner": "You can explore all analyses. Changes are made by the administrator.",
+  "guest.mode": "guest view, read-only",
+  "guest.discovery_note": "Models are discovered by the administrator. Open one from the run history to view it, its provenance, exports and conformance results.",
+  "guest.conformance_note": "Conformance results computed by the administrator appear here when you open them from the run history.",
+  "guest.compare_note": "Comparisons are run by the administrator. Open one from the history below.",
+  "guest.no_ocpn": "No object-centric Petri net has been discovered for this log yet.",
+  "guest.no_dataset_hint": "The administrator has not imported any data yet.",
+  "guest.settings_where": "Saved in this browser only.",
+  "ocel.ocpn_history": "Discovered OC Petri nets",
+  "ocel.no_ocpn_runs": "none yet",
+  "ocel.ocpn_run_label": "{when} · {types}",
+  "error.read_only": "This is the read-only guest site; changes can only be made on the administrator's computer."
 }

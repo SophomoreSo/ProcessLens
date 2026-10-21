@@ -1,7 +1,8 @@
 // Object-centric event logs: import, unique counts, OC-DFG, objects, relationships, OCPN and projection.
 import { paramInputs, readParams } from "./algoforms.js";
 import {
-  $, $$, api, badge, bootPage, clear, countUp, fmtDur, fmtInt, fmtNum, fmtTs, h, reveal, showError, t, table, toast,
+  $, $$, api, badge, bootPage, clear, countUp, fmtDur, fmtInt, fmtNum, fmtTs, h, IS_ADMIN, reveal, showError, t, table,
+  toast,
 } from "./core.js";
 import { followJob } from "./jobs.js";
 import { renderModel, typeColor } from "./models.js";
@@ -74,6 +75,7 @@ function drawTypeFilter() {
     } }), h("i", { class: "swatch", style: { background: typeColor(types, ty), width: "10px", height: "10px", borderRadius: "50%", display: "inline-block" } }), ty)));
   for (const sel of ["#obj-type", "#rel-type", "#proj-type"]) {
     const el = $(sel);
+    if (!el) continue; // projection is not part of the guest layout
     const prev = el.value;
     clear(el, sel === "#obj-type" ? h("option", { value: "" }, t("ocel.all_types")) : null, types.map((ty) => h("option", { value: ty }, ty)));
     if (types.includes(prev)) el.value = prev;
@@ -242,7 +244,7 @@ async function runProjection() {
 
 function drawOcpnForm() {
   const spec = ocAlgorithms.find((a) => a.id === "oc_petri_net");
-  if (!spec) return;
+  if (!spec || !$("#ocpn-form")) return;
   paramInputs($("#ocpn-form"), spec);
   if (spec.availability.status !== "available") {
     $("#run-ocpn").disabled = true;
@@ -280,10 +282,29 @@ async function runOcpn() {
     if (res.cached) toast(t("disc.cached"));
     const data = res.cached ? await api(`/api/mining/runs/${res.run.id}`) : await followRun(res.run.id, $("#ocpn-status"));
     await showOcpnRun(data.run);
+    loadOcpnHistory(data.run.id);
   } catch (err) { showError($("#ocpn-status"), err); } finally { $("#run-ocpn").disabled = false; }
 }
 
+/** Earlier OC Petri net runs of this log (the only way guests see OCPN models). */
+async function loadOcpnHistory(selectId) {
+  const sel = $("#ocpn-history");
+  try {
+    const res = await api("/api/mining/runs", { params: { ocel_log_id: current.id, kind: "ocpn", status: "succeeded", page_size: 50 } });
+    if (!res.items.length) {
+      clear(sel, h("option", { value: "" }, t("ocel.no_ocpn_runs")));
+      if (!selectId) clear($("#ocpn-view"), IS_ADMIN ? null : h("p", { class: "muted" }, t("guest.no_ocpn")));
+      return;
+    }
+    clear(sel, res.items.map((r) => h("option", { value: r.id }, t("ocel.ocpn_run_label", {
+      when: fmtTs(`${r.created_at}Z`, "UTC"), types: (r.request.object_types || []).join(", ") || t("ocel.all_types") }))));
+    sel.value = selectId || res.items[0].id;
+    if (!selectId) showOcpnRun(res.items.find((r) => r.id === sel.value));
+  } catch (err) { showError($("#ocpn-status"), err); }
+}
+
 function selectTab(name) {
+  if (!$(`[data-panel="${name}"]`)) name = "ocdfg"; // e.g. a projection link opened on the guest site
   tab = name;
   $$("#ocel-tabs .tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("[data-panel]").forEach((p) => p.classList.toggle("hidden", p.dataset.panel !== name));
@@ -292,6 +313,7 @@ function selectTab(name) {
   if (name === "objects") drawObjects();
   if (name === "relations") drawRelations();
   if (name === "projection") drawProjectionPreview();
+  if (name === "ocpn") loadOcpnHistory();
 }
 
 async function refresh() {
@@ -324,7 +346,7 @@ async function afterImport(log) {
 }
 
 $("#log-select").addEventListener("change", (e) => { history.replaceState(null, "", `${location.pathname}?log=${e.target.value}`); selectedTypes = []; render(); });
-$("#upload-form").addEventListener("submit", async (e) => {
+$("#upload-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const file = $("#ocel-file").files[0];
   if (!file) return;
@@ -342,11 +364,11 @@ $("#upload-form").addEventListener("submit", async (e) => {
     if (d) d.open = true;
   }
 });
-$("#load-demo").addEventListener("click", async () => {
+$("#load-demo")?.addEventListener("click", async () => {
   $("#load-demo").disabled = true;
   try { afterImport(await api("/api/ocel/demo", { method: "POST" })); } catch (err) { showError($("#upload-status"), err); } finally { $("#load-demo").disabled = false; }
 });
-$("#delete-log").addEventListener("click", async () => {
+$("#delete-log")?.addEventListener("click", async () => {
   if (!current || !confirm(t("ocel.confirm_delete", { name: current.name }))) return;
   try {
     await api(`/api/ocel/${current.id}`, { method: "DELETE" });
@@ -359,8 +381,11 @@ $("#obj-type").addEventListener("change", () => { objPage = 1; drawObjects(); })
 let searchTimer;
 $("#obj-search").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { objPage = 1; drawObjects(); }, 250); });
 $("#rel-type").addEventListener("change", drawRelations);
-$("#proj-type").addEventListener("change", drawProjectionPreview);
-$("#proj-ack").addEventListener("change", (e) => { $("#run-projection").disabled = !e.target.checked; });
-$("#run-projection").addEventListener("click", runProjection);
-$("#run-ocpn").addEventListener("click", runOcpn);
+$("#proj-type")?.addEventListener("change", drawProjectionPreview);
+$("#proj-ack")?.addEventListener("change", (e) => { $("#run-projection").disabled = !e.target.checked; });
+$("#run-projection")?.addEventListener("click", runProjection);
+$("#run-ocpn")?.addEventListener("click", runOcpn);
+$("#ocpn-history").addEventListener("change", async (e) => {
+  if (e.target.value) showOcpnRun((await api(`/api/mining/runs/${e.target.value}`)).run);
+});
 bootPage(render, { filters: false });

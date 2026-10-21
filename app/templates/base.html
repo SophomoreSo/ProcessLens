@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ lang }}" data-locale="{{ locale_tag }}" data-motion="{{ motion }}">
+<html lang="{{ lang }}" data-locale="{{ locale_tag }}" data-motion="{{ motion }}" data-role="{{ role }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,6 +23,8 @@
       </svg>
       <span><b>ProcessLens</b><small>{{ t('brand.tagline') }}</small></span>
     </a>
+    {% if not admin %}<p class="guest-banner" role="note"><span class="badge info">{{ t('guest.badge') }}</span>
+      <small>{{ t('guest.banner') }}</small></p>{% endif %}
     <ul class="nav">
       {% for key, path in pages %}
         {% if key == '|' %}<li class="nav-group" role="presentation">{{ t('nav.group.' ~ path) }}</li>
@@ -31,8 +33,9 @@
       {% endfor %}
     </ul>
     <div class="sidebar-foot">
-      v{{ version }} · {{ t('brand.local_mode') }}<br>
+      {% if admin %}v{{ version }} · {{ t('brand.local_mode') }}<br>
       <a href="/docs" target="_blank" rel="noopener">{{ t('nav.api_docs') }}</a> ·
+      {% else %}v{{ version }} · {{ t('guest.mode') }}<br>{% endif %}
       <button type="button" class="btn-ghost btn-sm" id="theme-toggle" aria-label="{{ t('nav.toggle_theme') }}">{{ t('nav.theme') }}</button>
     </div>
   </aside>

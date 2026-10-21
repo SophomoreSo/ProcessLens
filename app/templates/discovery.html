@@ -7,6 +7,7 @@
   </div>
 </div>
 <div class="split">
+  {% if admin %}
   <section class="card">
     <h2>{{ t('disc.algorithm') }}</h2>
     <label>{{ t('disc.choose_algorithm') }}<select id="algorithm"></select></label>
@@ -20,6 +21,12 @@
     <div class="actions"><button type="button" class="btn btn-primary" id="run-discovery">{{ t('disc.run') }}</button></div>
     <div id="run-status" style="margin-top:10px"></div>
   </section>
+  {% else %}
+  <section class="card">
+    <h2>{{ t('disc.algorithm') }}</h2>
+    <p class="notice info small">{{ t('guest.discovery_note') }}</p>
+  </section>
+  {% endif %}
   <section class="card">
     <h2>{{ t('disc.history') }}</h2>
     <div id="history"></div>
@@ -31,12 +38,12 @@
   <div class="card-head"><h2>{{ t('ref.title') }}</h2></div>
   <p class="small muted">{{ t('ref.intro') }}</p>
   <div id="references"></div>
-  <form id="ref-upload" class="form-grid" style="margin-top:10px">
+  {% if admin %}<form id="ref-upload" class="form-grid" style="margin-top:10px">
     <label>{{ t('ref.upload_file') }}<input type="file" name="file" accept=".pnml,.ptml" required></label>
     <label>{{ t('common.name') }}<input name="name" maxlength="200" required></label>
     <label>{{ t('ref.note') }}<input name="note" maxlength="2000"></label>
     <div class="actions" style="align-self:end"><button type="submit" class="btn">{{ t('ref.upload') }}</button></div>
-  </form>
+  </form>{% endif %}
   <div id="ref-status"></div>
 </section>
 {% endblock %}

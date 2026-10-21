@@ -1,5 +1,5 @@
 // Shared helpers for mining runs: following progress, cancellation, provenance and result cards.
-import { api, badge, clear, fmtInt, fmtNum, fmtPct, fmtTs, h, t, toast } from "./core.js";
+import { api, badge, clear, fmtInt, fmtNum, fmtPct, fmtTs, h, IS_ADMIN, t, toast } from "./core.js";
 
 const STATUS_CLASS = { succeeded: "ok", failed: "danger", cancelled: "warn", timed_out: "warn", interrupted: "warn",
   running: "info", queued: "info", computed: "ok", unsupported: "", not_evaluable: "warn", not_requested: "" };
@@ -33,7 +33,7 @@ export async function followRun(runId, el) {
   const elapsed = h("span", { class: "muted small" });
   const started = Date.now();
   clear(el, h("div", { class: "notice info" }, h("div", { class: "actions" }, h("span", { class: "spinner" }), stage,
-    h("span", { class: "grow" }), elapsed, cancelBtn), progress));
+    h("span", { class: "grow" }), elapsed, IS_ADMIN ? cancelBtn : null), progress));
   for (;;) {
     let data;
     try {

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from zoneinfo import available_timezones
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import __version__
 from app.database import get_db
-from app.security import csrf_token
+from app.security import csrf_token, request_role
 from app.services.cache import cache
 
 router = APIRouter(prefix="/api", tags=["meta"])
@@ -23,8 +23,8 @@ def health(db: Session = Depends(get_db)):
 
 
 @router.get("/session", summary="CSRF token for state-changing requests (same-origin only)")
-def session_info():
-    return {"csrf_token": csrf_token(), "header": "X-CSRF-Token"}
+def session_info(request: Request):
+    return {"csrf_token": csrf_token(request_role(request)), "header": "X-CSRF-Token"}
 
 
 @router.get("/meta/timezones", summary="IANA timezone names")

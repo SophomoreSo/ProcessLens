@@ -1481,5 +1481,18 @@
   "guide.err.unknown_params": "Parametry nieobsługiwane przez to pytanie: {params}",
   "guide.err.invalid_param": "Nieprawidłowa wartość {param}.",
   "guide.err.needs_dataset": "To pytanie wymaga zbioru danych (dataset_id).",
-  "guide.err.needs_ocel": "To pytanie wymaga dziennika obiektowo-centrycznego (ocel_log_id)."
+  "guide.err.needs_ocel": "To pytanie wymaga dziennika obiektowo-centrycznego (ocel_log_id).",
+  "guest.badge": "Gość · tylko odczyt",
+  "guest.banner": "Możesz przeglądać wszystkie analizy. Zmiany wprowadza administrator.",
+  "guest.mode": "widok gościa, tylko odczyt",
+  "guest.discovery_note": "Modele odkrywa administrator. Otwórz model z historii uruchomień, aby zobaczyć go wraz z pochodzeniem, eksportami i wynikami zgodności.",
+  "guest.conformance_note": "Wyniki zgodności obliczone przez administratora pojawią się tutaj po otwarciu ich z historii uruchomień.",
+  "guest.compare_note": "Porównania uruchamia administrator. Otwórz jedno z historii poniżej.",
+  "guest.no_ocpn": "Dla tego dziennika nie odkryto jeszcze obiektowo-centrycznej sieci Petriego.",
+  "guest.no_dataset_hint": "Administrator nie zaimportował jeszcze żadnych danych.",
+  "guest.settings_where": "Zapisywane tylko w tej przeglądarce.",
+  "ocel.ocpn_history": "Odkryte sieci Petriego OC",
+  "ocel.no_ocpn_runs": "jeszcze brak",
+  "ocel.ocpn_run_label": "{when} · {types}",
+  "error.read_only": "To jest witryna gościa tylko do odczytu; zmiany można wprowadzać wyłącznie na komputerze administratora."
 }

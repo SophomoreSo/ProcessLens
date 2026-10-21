@@ -6,7 +6,7 @@
     <p>{{ t('cf.intro_1') }} <span class="badge compliant">{{ t('result.compliant') }}</span>, <span class="badge violating">{{ t('result.violating') }}</span>,
       <span class="badge not_evaluable">{{ t('result.not_evaluable') }}</span> — {{ t('cf.intro_2') }}</p>
   </div>
-  <button type="button" class="btn btn-primary" id="new-rule">{{ t('cf.new_rule') }}</button>
+  {% if admin %}<button type="button" class="btn btn-primary" id="new-rule">{{ t('cf.new_rule') }}</button>{% endif %}
 </div>
 <section class="card"><h2>{{ t('cf.rules') }}</h2><div id="rules-root"><div class="state"><span class="spinner"></span> {{ t('common.loading') }}</div></div></section>
 <section class="card hidden" id="rule-editor"></section>

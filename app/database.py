@@ -22,6 +22,7 @@ class Base(DeclarativeBase):
 
 
 _engine: Engine | None = None
+_engine_url: str | None = None
 _SessionLocal: sessionmaker[Session] | None = None
 
 
@@ -37,7 +38,7 @@ def _configure_sqlite(engine: Engine) -> None:
 
 def init_engine(url: str | None = None) -> Engine:
     """(Re)create the global engine. Tests call this with a temp database."""
-    global _engine, _SessionLocal
+    global _engine, _engine_url, _SessionLocal
     settings = get_settings()
     url = url or settings.resolved_database_url
     kwargs: dict = {"future": True}
@@ -46,9 +47,17 @@ def init_engine(url: str | None = None) -> Engine:
     if _engine is not None:
         _engine.dispose()
     _engine = create_engine(url, **kwargs)
+    _engine_url = url
     if url.startswith("sqlite"):
         _configure_sqlite(_engine)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, autoflush=False)
+    return _engine
+
+
+def ensure_engine() -> Engine:
+    """Create the engine unless one already points at the configured database (shared by admin and guest apps)."""
+    if _engine is None or _engine_url != get_settings().resolved_database_url:
+        return init_engine()
     return _engine
 
 

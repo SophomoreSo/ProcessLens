@@ -1,6 +1,6 @@
 import { algorithmInfo, algorithmOptions, loadRegistry, paramInputs, readParams } from "./algoforms.js";
 import {
-  $, $$, api, badge, bootPage, clear, currentDatasetId, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
+  $, $$, api, badge, bootPage, IS_ADMIN, clear, currentDatasetId, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
   linkWith, loading, noDatasetState, pager, reveal, showError, t, table, toast,
 } from "./core.js";
 import { downloadPng, renderModel, sizeText } from "./models.js";
@@ -14,6 +14,7 @@ const PETRI_METHODS = ["token_replay", "alignments", "soundness"];
 function spec(id) { return registry.find((a) => a.id === id); }
 
 function drawAlgorithm() {
+  if (!$("#algorithm")) return; // guest layout: no discovery form
   const s = spec($("#algorithm").value);
   if (!s) return;
   clear($("#algo-info"), algorithmInfo(s));
@@ -84,7 +85,7 @@ async function showRun(data) {
       h("div", {}, h("h3", {}, t("disc.provenance")), provenance(run, registry),
         h("p", { class: "small muted" }, t("disc.discovery_seconds", { s: fmtNum(run.result.discovery_seconds, 3) })),
         warnings),
-      h("div", {},
+      !IS_ADMIN ? null : h("div", {},
         h("h3", {}, t("ref.approve_title")),
         h("form", { class: "form-grid", onsubmit: async (e) => {
           e.preventDefault();
@@ -116,6 +117,10 @@ function methodsFor(modelType, hasPetri) {
 function drawConformanceForm() {
   const card = $("#conformance-card");
   card.classList.remove("hidden");
+  if (!IS_ADMIN) {
+    clear(card, h("h2", {}, t("conf2.title")), h("p", { class: "small muted" }, t("guest.conformance_note")), h("div", { id: "conf-result" }));
+    return;
+  }
   const sourceSel = h("select", { name: "source" },
     current ? h("option", { value: `run:${current.run.id}` }, t("conf2.source_discovered", { name: algoName(registry, current.run.algorithm_id) })) : null,
     references.map((r) => h("option", { value: `ref:${r.id}` }, t("conf2.source_reference", { name: r.name }))));
@@ -240,16 +245,16 @@ async function loadReferences() {
     { key: "approved", label: t("ref.approved_at"), render: (r) => fmtTs(`${r.approved_at}Z`, "UTC") },
     { key: "actions", label: "", render: (r) => h("div", { class: "actions" },
       r.has_petri_net ? h("a", { class: "btn btn-sm", href: `/api/datasets/${currentDatasetId()}/reference-models/${r.id}/export.pnml`, download: "" }, "PNML") : null,
-      h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: async () => {
+      IS_ADMIN ? h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: async () => {
         if (!confirm(t("ref.delete_confirm", { name: r.name }))) return;
         await api(`/api/datasets/${currentDatasetId()}/reference-models/${r.id}`, { method: "DELETE" });
         loadReferences();
-      } }, t("common.delete"))) },
+      } }, t("common.delete")) : null) },
   ], references) : h("p", { class: "muted small" }, t("ref.none")));
   if (!$("#conformance-card").classList.contains("hidden")) drawConformanceForm();
 }
 
-$("#ref-upload").addEventListener("submit", async (e) => {
+$("#ref-upload")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = new FormData(e.target);
   try {
@@ -265,12 +270,12 @@ async function render() {
   const ds = currentDatasetId();
   if (!ds) {
     noDatasetState($("#history"));
-    $("#run-discovery").disabled = true;
+    if ($("#run-discovery")) $("#run-discovery").disabled = true;
     return;
   }
   if (!registry.length) {
     registry = await loadRegistry(api);
-    algorithmOptions($("#algorithm"), registry, "inductive_infrequent");
+    if ($("#algorithm")) algorithmOptions($("#algorithm"), registry, "inductive_infrequent");
   }
   drawAlgorithm();
   loadHistory();
@@ -279,6 +284,6 @@ async function render() {
   if (pre) showRun(await api(`/api/mining/runs/${pre}`));
 }
 
-$("#algorithm").addEventListener("change", drawAlgorithm);
-$("#run-discovery").addEventListener("click", runDiscovery);
+$("#algorithm")?.addEventListener("change", drawAlgorithm);
+$("#run-discovery")?.addEventListener("click", runDiscovery);
 bootPage(render);

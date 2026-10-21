@@ -378,3 +378,7 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 .answer-meta { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); margin-bottom: 12px; }
 .answer-meta > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
 .answer-chart { height: 360px; }
+
+/* Guest (read-only) layout */
+.guest-banner { margin: 6px 10px 10px; display: grid; gap: 4px; }
+.guest-banner small { color: var(--text-muted); font-size: .75rem; line-height: 1.35; }

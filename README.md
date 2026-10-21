@@ -51,6 +51,16 @@ python -m app
 Open <http://127.0.0.1:8000>, go to **Datasets → Load demo data**, and explore. The database
 is created and migrated automatically on first start (`./data/processlens.db`).
 
+To also share a **read-only guest site** with other people:
+
+```bash
+python -m app --guest
+```
+
+The admin site keeps running on <http://127.0.0.1:8000> (this computer only); the guest site
+listens on port **8080** on all interfaces (`http://<your-computer's-address>:8080`). See
+[Admin and guest sites](#admin-and-guest-sites).
+
 With [uv](https://docs.astral.sh/uv/) instead of pip: `uv venv --python 3.11 .venv` then
 `uv pip install -r requirements-dev.txt`.
 
@@ -78,12 +88,39 @@ restarts. Without compose: `docker build -t processlens .` and
 All settings are environment variables with the prefix `PROCESSLENS_` (or a `.env` file);
 see [.env.example](.env.example). Important ones: `HOST` (default `127.0.0.1`), `PORT`,
 `DATA_DIR`, `DATABASE_URL`, `SECRET_KEY`, `MAX_UPLOAD_MB` (200), `MAX_ROWS` (1,000,000),
-`ALLOWED_HOSTS`, `MINING_TIMEOUT_S` (300), `MINING_MAX_TIMEOUT_S` (3600),
+`ALLOWED_HOSTS`, `GUEST_ENABLED` (false), `GUEST_HOST` (`0.0.0.0`), `GUEST_PORT` (8080),
+`GUEST_ALLOWED_HOSTS` (`*`), `MINING_TIMEOUT_S` (300), `MINING_MAX_TIMEOUT_S` (3600),
 `MINING_MAX_ALIGNMENT_VARIANTS` (2000).
 
-The launcher (`python -m app`) **refuses to bind to a non-loopback address** unless
-`PROCESSLENS_ALLOW_NON_LOOPBACK_BIND=true` is set (the Docker image sets it because the port
-is published on loopback only).
+The launcher (`python -m app`) **refuses to bind the admin site to a non-loopback address**
+unless `PROCESSLENS_ALLOW_NON_LOOPBACK_BIND=true` is set (the Docker image sets it because the
+admin port is published on loopback only).
+
+### Admin and guest sites
+
+ProcessLens serves two layouts of the same data from one process:
+
+| | Admin site | Guest site |
+|---|---|---|
+| Who | you, on this computer | everyone else |
+| Address | `127.0.0.1:8000` (loopback only) | `0.0.0.0:8080` by default (`--guest` or `GUEST_ENABLED=true`) |
+| Access | read and write | **read only**, no login |
+| Pages | all | all except *Import* and *Datasets*; no API docs |
+| Can do | import, edit rules and alerts, run discovery/conformance/comparison, approve models, delete, change settings | browse every dataset, OCEL and task log, use filters, cases, variants, performance (incl. cohort comparison), guided analysis, view and export existing mining results, download exports |
+| Settings | language/animations saved in the database | language/animations saved in the guest's own browser (cookies) |
+
+The guest layout hides every control that would change data, and the server enforces it
+independently: the guest site answers every `POST`/`PUT`/`PATCH`/`DELETE` with
+`403 read_only` (the only accepted `POST` is the stateless cohort comparison), and staged
+uploads and import jobs are not readable there. Both sites share the database, caches and
+mining worker, so anything the admin does is visible to guests immediately.
+
+**What guests can see:** everything in the database — all datasets, case ids, activities,
+resources, departments, costs, attributes, OCEL objects and task events. Do not import data
+that the people who can reach port 8080 must not see. The guest site has **no login, no TLS
+and no rate limiting**: on an untrusted network or the internet, put it behind a firewall rule
+or a reverse proxy that adds HTTPS (and, if needed, authentication). Guests can trigger
+analyses that use CPU on your computer.
 
 ---
 
@@ -121,7 +158,7 @@ SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / Pos
 | Persistence | SQLAlchemy 2.1, Alembic, SQLite (WAL) |
 | Analysis | pandas 3.0, numpy; PM4Py 2.7.23 for discovery, formal conformance, OC Petri nets and XES export (run in a separate worker process), and as a cross-check of DFG discovery in the tests |
 | Frontend | HTML5, CSS3, vanilla ES modules, Cytoscape.js 3.30 (+ dagre layout), Plotly.js 2.35 (basic bundle) — vendored in `app/static/vendor`, no CDN at runtime |
-| Tests | pytest (146 tests) |
+| Tests | pytest (162 tests) |
 
 ### Project structure
 
@@ -302,6 +339,14 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
 
 ### Automated (run for this release)
 
+**Admin/guest release:** `python -m pytest` → **162 passed**, including `test_guest.py` (16):
+guest pages and missing admin pages/controls, guest reads of admin data, refusal of every kind
+of write with `read_only`, separate CSRF tokens per site, blocked staged uploads, guest language in cookies without touching
+the admin preference, and the launcher keeping the admin site on loopback. Checked live with
+`python -m app --guest`: both sites up, guest conformance/discovery/alerts/OCEL pages without
+write controls, a model discovered on the admin site opened on the guest site, guest language
+switched to Polish while the admin site stayed English.
+
 **Mining, object-centric, task-mining and guided-analysis release:** `python -m pytest` →
 **146 passed** (Python 3.11.6, PM4Py 2.7.23.11, macOS arm64): 87 earlier tests plus
 `test_mining.py` (32), `test_ocel.py` (10), `test_tasks.py` (8), `test_guide.py` (8) and a determinism check of the OCEL and task demo generators; the
@@ -401,10 +446,13 @@ dataset is held in memory as a pandas DataFrame.
 
 The default deployment is **single-user and local-only**. Implemented protections:
 
-* Bound to `127.0.0.1`; launcher refuses other interfaces without an explicit override.
+* Admin site bound to `127.0.0.1`; the launcher refuses other interfaces without an explicit
+  override. The optional guest site is read-only, enforced by server middleware (not only by
+  the layout), and has no API documentation endpoints.
 * Host-header allow-list (DNS-rebinding protection); no CORS (cross-origin reads blocked).
-* CSRF: state-changing `/api` requests require an HMAC-derived `X-CSRF-Token`; requests with
-  a foreign `Origin` are rejected.
+* CSRF: state-changing `/api` requests require an HMAC-derived `X-CSRF-Token` (the guest site
+  uses a different token, so guest pages never reveal the admin token); requests with a foreign
+  `Origin` are rejected.
 * Strict Content-Security-Policy (`script-src 'self'`), `X-Frame-Options: DENY`, `nosniff`,
   `no-referrer`.
 * Upload size, row, column and field-length limits; extension and binary checks; uploads
@@ -415,7 +463,9 @@ The default deployment is **single-user and local-only**. Implemented protection
 * Secrets from environment variables; logs contain IDs and counts, not business data values.
 * Dataset deletion requires typing the dataset name (UI) / `confirm_name` (API).
 
-**Do not expose this application publicly or on a shared network.** A shared deployment
+**Never expose the admin site** (port 8000) beyond this computer. The read-only guest site is
+the supported way to let others look (see [Admin and guest sites](#admin-and-guest-sites)). A
+multi-user deployment with editing rights for several people
 requires, at minimum: authentication (e.g. OIDC/SSO), authorization and role-based access,
 tenant/workspace isolation of datasets, TLS termination, a production database (PostgreSQL)
 with backups, a multi-process-safe job queue, rate limiting, audit logging, secret management,
@@ -506,7 +556,8 @@ mining worker process) and the XES export; review the license before distributin
 * Cohort comparison is descriptive: no statistical significance tests or causal inference.
 * Alerts are evaluated on demand and after imports; no scheduler, no notifications.
 * In-memory analytics for the selected dataset; tested to ~100k events, not millions.
-* Single process, single user, no authentication; PostgreSQL untested.
+* Single process, single editing user, no authentication; the guest site is read-only but
+  open to anyone who can reach it. PostgreSQL untested.
 * The Docker image could not be built in the development environment used for this release
   (Docker was not installed); the Dockerfile follows the same steps as the tested local
   install but has not been executed.

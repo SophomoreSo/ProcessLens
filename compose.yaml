@@ -1,15 +1,17 @@
-# docker compose up --build   ->  http://localhost:8000
+# docker compose up --build   ->  admin: http://localhost:8000   guest (read-only): http://<this-host>:8080
 services:
   processlens:
     build: .
     image: processlens:0.1.0
     ports:
-      - "127.0.0.1:8000:8000"   # loopback only: the app has no authentication
+      - "127.0.0.1:8000:8000"   # admin site: loopback only (full write access, no authentication)
+      - "8080:8080"             # guest site: read-only, reachable by others (no login)
     volumes:
       - processlens-data:/data  # database and staged uploads survive restarts
     environment:
       # Optional. Set in your shell or a .env file next to this compose file.
       PROCESSLENS_SECRET_KEY: ${PROCESSLENS_SECRET_KEY:-}
+      PROCESSLENS_GUEST_ENABLED: ${PROCESSLENS_GUEST_ENABLED:-true}
       PROCESSLENS_MAX_UPLOAD_MB: ${PROCESSLENS_MAX_UPLOAD_MB:-200}
       PROCESSLENS_MAX_ROWS: ${PROCESSLENS_MAX_ROWS:-1000000}
     restart: unless-stopped

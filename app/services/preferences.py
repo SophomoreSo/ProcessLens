@@ -68,14 +68,37 @@ def reset_cache() -> None:
 
 
 LANGUAGE_HEADER = "X-ProcessLens-Language"
+# The guest site never writes preferences: each guest's choice lives in their own browser cookies.
+GUEST_LANGUAGE_COOKIE = "processlens_guest_lang"
+GUEST_MOTION_COOKIE = "processlens_guest_motion"
+
+
+def is_guest(request) -> bool:
+    app = request.scope.get("app")
+    return getattr(getattr(app, "state", None), "role", "admin") == "guest"
+
+
+def _saved() -> Prefs:
+    try:
+        return get_prefs()
+    except Exception:  # database not ready (e.g. during start-up errors)
+        return Prefs()
+
+
+def prefs_for(request) -> Prefs:
+    """Preferences for rendering a page: the saved ones on the admin site, cookies (else the saved ones) for guests."""
+    saved = _saved()
+    if not is_guest(request):
+        return saved
+    lang = request.cookies.get(GUEST_LANGUAGE_COOKIE, "")
+    motion = request.cookies.get(GUEST_MOTION_COOKIE, "")
+    return Prefs(language=lang if lang in LANGUAGES else saved.language,
+                 motion=motion if motion in MOTION_CHOICES else saved.motion)
 
 
 def language_for(request) -> str:
-    """Language for an API response: explicit header (sent by the UI), else the saved preference."""
+    """Language for an API response: explicit header (sent by the UI), else the page preferences."""
     header = request.headers.get(LANGUAGE_HEADER)
     if header and header.strip().lower() in LANGUAGES:
         return header.strip().lower()
-    try:
-        return get_prefs().language
-    except Exception:  # database not ready (e.g. during start-up errors)
-        return DEFAULT_LANGUAGE
+    return prefs_for(request).language

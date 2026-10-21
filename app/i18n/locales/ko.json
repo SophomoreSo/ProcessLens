@@ -1481,5 +1481,18 @@
   "guide.err.unknown_params": "이 질문이 지원하지 않는 매개변수: {params}",
   "guide.err.invalid_param": "{param} 값이 올바르지 않습니다.",
   "guide.err.needs_dataset": "이 질문에는 데이터셋(dataset_id)이 필요합니다.",
-  "guide.err.needs_ocel": "이 질문에는 객체 중심 로그(ocel_log_id)가 필요합니다."
+  "guide.err.needs_ocel": "이 질문에는 객체 중심 로그(ocel_log_id)가 필요합니다.",
+  "guest.badge": "게스트 · 읽기 전용",
+  "guest.banner": "모든 분석을 둘러볼 수 있습니다. 변경은 관리자가 합니다.",
+  "guest.mode": "게스트 보기, 읽기 전용",
+  "guest.discovery_note": "모델은 관리자가 발견합니다. 실행 기록에서 모델을 열어 모델, 출처 정보, 내보내기, 적합성 결과를 볼 수 있습니다.",
+  "guest.conformance_note": "관리자가 계산한 적합성 결과는 실행 기록에서 열면 여기에 표시됩니다.",
+  "guest.compare_note": "비교는 관리자가 실행합니다. 아래 기록에서 열어 보세요.",
+  "guest.no_ocpn": "이 로그에 대해 발견된 객체 중심 페트리 넷이 아직 없습니다.",
+  "guest.no_dataset_hint": "관리자가 아직 데이터를 가져오지 않았습니다.",
+  "guest.settings_where": "이 브라우저에만 저장됩니다.",
+  "ocel.ocpn_history": "발견된 OC 페트리 넷",
+  "ocel.no_ocpn_runs": "아직 없음",
+  "ocel.ocpn_run_label": "{when} · {types}",
+  "error.read_only": "읽기 전용 게스트 사이트입니다. 변경은 관리자 컴퓨터에서만 할 수 있습니다."
 }

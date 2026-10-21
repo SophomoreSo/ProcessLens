@@ -152,13 +152,17 @@ async function loadHistory() {
 }
 
 async function render() {
-  if (!currentDatasetId()) { noDatasetState($("#algo-choices")); $("#run-compare").disabled = true; return; }
+  if (!currentDatasetId()) {
+    noDatasetState($("#algo-choices") || $("#cmp-history"));
+    if ($("#run-compare")) $("#run-compare").disabled = true;
+    return;
+  }
   if (!registry.length) registry = await loadRegistry(api);
-  drawChoices();
+  if ($("#algo-choices")) drawChoices(); // admin layout only
   loadHistory();
   const pre = new URLSearchParams(location.search).get("run");
   if (pre && !lastRun) showComparison((await api(`/api/mining/runs/${pre}`)).run);
 }
 
-$("#run-compare").addEventListener("click", runCompare);
+$("#run-compare")?.addEventListener("click", runCompare);
 bootPage(render);

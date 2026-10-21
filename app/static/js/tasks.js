@@ -141,6 +141,7 @@ async function drawDfg() {
 
 function drawLinkSelect() {
   const sel = $("#link-dataset");
+  if (!sel) return; // guest layout: the link is shown, not edited
   clear(sel, h("option", { value: "" }, t("task.no_link")), getDatasets().map((d) => h("option", { value: d.id }, d.name)));
   sel.value = current.linked_dataset_id ?? "";
 }
@@ -221,7 +222,7 @@ async function afterImport(tl) {
   render();
 }
 
-$("#preview-form").addEventListener("submit", async (e) => {
+$("#preview-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   pendingFile = $("#task-file").files[0];
   if (!pendingFile) return;
@@ -229,7 +230,7 @@ $("#preview-form").addEventListener("submit", async (e) => {
   form.append("file", pendingFile);
   try { clear($("#upload-status")); drawMapping(await api("/api/tasks/preview", { method: "POST", form })); } catch (err) { importFailed(err); }
 });
-$("#mapping-form").addEventListener("submit", async (e) => {
+$("#mapping-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const mapping = {};
   for (const sel of $$("#mapping-fields select")) if (sel.value) mapping[sel.name] = sel.value;
@@ -240,16 +241,16 @@ $("#mapping-form").addEventListener("submit", async (e) => {
   form.append("invalid_row_policy", $("#task-policy").value);
   try { clear($("#upload-status")); afterImport(await api("/api/tasks/upload", { method: "POST", form })); } catch (err) { importFailed(err); }
 });
-$("#load-demo").addEventListener("click", async () => {
+$("#load-demo")?.addEventListener("click", async () => {
   $("#load-demo").disabled = true;
   try { afterImport(await api("/api/tasks/demo", { method: "POST" })); } catch (err) { importFailed(err); } finally { $("#load-demo").disabled = false; }
 });
 $("#log-select").addEventListener("change", (e) => { history.replaceState(null, "", `${location.pathname}?log=${e.target.value}`); render(); });
-$("#delete-log").addEventListener("click", async () => {
+$("#delete-log")?.addEventListener("click", async () => {
   if (!current || !confirm(t("task.confirm_delete", { name: current.name }))) return;
   try { await api(`/api/tasks/${current.id}`, { method: "DELETE" }); history.replaceState(null, "", location.pathname); render(); } catch (err) { toast(err.message, "error"); }
 });
-$("#link-dataset").addEventListener("change", async (e) => {
+$("#link-dataset")?.addEventListener("change", async (e) => {
   try {
     current = await api(`/api/tasks/${current.id}/link`, { method: "PUT", body: { dataset_id: e.target.value ? Number(e.target.value) : null } });
     casePage = 1;

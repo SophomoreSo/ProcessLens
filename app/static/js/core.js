@@ -12,6 +12,8 @@ const CATALOG = (() => {
 })();
 export const LANG = document.documentElement.lang || "en";
 export const LOCALE = document.documentElement.dataset.locale || "en-US";
+/** False on the read-only guest site: pages then build no controls that change data (the server refuses them anyway). */
+export const IS_ADMIN = document.documentElement.dataset.role !== "guest";
 
 /** Translate ``key``, filling ``{name}`` placeholders from ``params``. Unknown keys render as the key. */
 export function t(key, params = {}) {
@@ -465,6 +467,7 @@ export async function refreshDatasets() {
 }
 
 export function noDatasetState(el) {
+  if (!IS_ADMIN) return empty(el, t("empty.no_dataset.title"), t("guest.no_dataset_hint"));
   return empty(el, t("empty.no_dataset.title"), t("empty.no_dataset.hint"),
     h("div", { class: "actions", style: { justifyContent: "center" } },
       h("a", { class: "btn btn-primary", href: "/datasets?demo=1" }, t("ds.load_demo")),

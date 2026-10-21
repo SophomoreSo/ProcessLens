@@ -12,11 +12,11 @@
       <h2>{{ t('ocel.logs') }}</h2>
       <div class="actions">
         <select id="log-select" aria-label="{{ t('ocel.logs') }}"></select>
-        <button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>
+        {% if admin %}<button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>{% endif %}
       </div>
       <div id="log-info" class="small" style="margin-top:8px"></div>
     </div>
-    <div>
+    {% if admin %}<div>
       <h2>{{ t('ocel.import') }}</h2>
       <form id="upload-form" class="actions">
         <input type="file" id="ocel-file" accept=".json,.jsonocel,application/json" required>
@@ -25,7 +25,7 @@
       </form>
       <p class="small muted">{{ t('ocel.supported_constructs') }}</p>
       <div id="upload-status"></div>
-    </div>
+    </div>{% endif %}
   </div>
 </section>
 <div id="ocel-body" class="hidden">
@@ -43,7 +43,7 @@
       <button type="button" class="tab" role="tab" data-tab="objects">{{ t('ocel.tab.objects') }}</button>
       <button type="button" class="tab" role="tab" data-tab="relations">{{ t('ocel.tab.relations') }}</button>
       <button type="button" class="tab" role="tab" data-tab="ocpn">{{ t('ocel.tab.ocpn') }}</button>
-      <button type="button" class="tab" role="tab" data-tab="projection">{{ t('ocel.tab.projection') }}</button>
+      {% if admin %}<button type="button" class="tab" role="tab" data-tab="projection">{{ t('ocel.tab.projection') }}</button>{% endif %}
     </div>
     <div data-panel="ocdfg"><p class="small muted">{{ t('ocel.ocdfg_note') }}</p><div id="ocdfg-view"></div><div id="ocdfg-table" style="margin-top:10px"></div></div>
     <div data-panel="types" class="hidden"><div id="types-view"></div></div>
@@ -66,12 +66,13 @@
     </div>
     <div data-panel="ocpn" class="hidden">
       <p class="small muted">{{ t('ocel.ocpn_note') }}</p>
-      <form id="ocpn-form" class="form-grid"></form>
+      {% if admin %}<form id="ocpn-form" class="form-grid"></form>
       <div class="actions" style="margin-top:8px"><button type="button" class="btn btn-primary" id="run-ocpn">{{ t('ocel.run_ocpn') }}</button></div>
-      <div id="ocpn-status" style="margin-top:10px"></div>
+      {% endif %}<div id="ocpn-status" style="margin-top:10px"></div>
+      <label>{{ t('ocel.ocpn_history') }}<select id="ocpn-history"></select></label>
       <div id="ocpn-view" style="margin-top:10px"></div>
     </div>
-    <div data-panel="projection" class="hidden">
+    {% if admin %}<div data-panel="projection" class="hidden">
       <p class="notice warn small">{{ t('ocel.projection_warning') }}</p>
       <div class="form-grid">
         <label>{{ t('ocel.object_type') }}<select id="proj-type"></select></label>
@@ -81,7 +82,7 @@
       <label class="inline" style="margin-top:8px"><input type="checkbox" id="proj-ack"> {{ t('ocel.ack_flattening') }}</label>
       <div class="actions" style="margin-top:8px"><button type="button" class="btn btn-primary" id="run-projection" disabled>{{ t('ocel.create_projection') }}</button></div>
       <div id="proj-status" style="margin-top:10px"></div>
-    </div>
+    </div>{% endif %}
   </section>
 </div>
 {% endblock %}

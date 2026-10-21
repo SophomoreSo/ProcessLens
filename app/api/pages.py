@@ -12,10 +12,11 @@ from app import __version__
 from app.config import PROJECT_ROOT
 from app.i18n import LANGUAGES, LOCALE_TAGS, client_catalog, t
 from app.security import csrf_token
-from app.services.preferences import get_prefs
+from app.services.preferences import is_guest, prefs_for
 
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
-router = APIRouter(include_in_schema=False)
+router = APIRouter(include_in_schema=False)  # admin site
+guest_router = APIRouter(include_in_schema=False)  # read-only guest site
 
 # (template / nav key, path). Labels come from the catalog: nav.<key>.
 # Entries with key "|" are navigation group headings (nav.group.<path>), not pages.
@@ -39,14 +40,19 @@ PAGES = [
     ("import", "/import"),
     ("settings", "/settings"),
 ]
+# The guest layout has no data management pages (import, dataset administration).
+ADMIN_ONLY_PAGES = {"datasets", "import"}
+GUEST_PAGES = [p for p in PAGES if p[0] not in ADMIN_ONLY_PAGES and p != ("|", "data")]
 
 
 def _render(request: Request, page: str) -> HTMLResponse:
-    prefs = get_prefs()
+    guest = is_guest(request)
+    prefs = prefs_for(request)
     lang = prefs.language
     tr = partial(t, lang)
     return templates.TemplateResponse(request, f"{page}.html", {
-        "page": page, "title": tr(f"nav.{page}"), "pages": PAGES, "csrf_token": csrf_token(),
+        "role": "guest" if guest else "admin", "admin": not guest,
+        "page": page, "title": tr(f"nav.{page}"), "pages": GUEST_PAGES if guest else PAGES, "csrf_token": csrf_token("guest" if guest else "admin"),
         "version": __version__, "t": tr, "lang": lang, "locale_tag": LOCALE_TAGS[lang], "motion": prefs.motion,
         "languages": LANGUAGES, "catalog": client_catalog(lang),
     })
@@ -63,3 +69,5 @@ for _page, _path in PAGES:
     if _page == "|":
         continue
     router.add_api_route(_path, _make(_page), methods=["GET", "HEAD"], response_class=HTMLResponse)
+    if _page not in ADMIN_ONLY_PAGES:
+        guest_router.add_api_route(_path, _make(_page), methods=["GET", "HEAD"], response_class=HTMLResponse)

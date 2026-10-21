@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from urllib.parse import urlsplit
 
 from fastapi import Request
@@ -27,6 +28,11 @@ from app.i18n import t
 from app.services.preferences import language_for
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# The guest site is read-only. The only non-GET request it accepts computes a
+# cohort comparison without storing anything.
+GUEST_ALLOWED_WRITES = (re.compile(r"^/api/datasets/\d+/performance/compare$"),)
+# Admin-only read endpoints (staged raw upload files are part of the admin import workflow).
+GUEST_BLOCKED_PREFIXES = ("/api/uploads", "/api/jobs")
 
 APP_CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
@@ -43,14 +49,32 @@ DOCS_CSP = (
 )
 
 
-def csrf_token() -> str:
+def csrf_token(role: str = "admin") -> str:
+    """Per-site token: the guest site's pages never reveal the admin site's token."""
     secret = get_settings().secret_key.encode("utf-8")
-    return hmac.new(secret, b"processlens-csrf-v1", hashlib.sha256).hexdigest()
+    label = b"processlens-csrf-v1" if role == "admin" else b"processlens-guest-csrf-v1"
+    return hmac.new(secret, label, hashlib.sha256).hexdigest()
+
+
+def request_role(request: Request) -> str:
+    return getattr(getattr(request.scope.get("app"), "state", None), "role", "admin")
 
 
 def _forbidden(request: Request, code: str) -> JSONResponse:
     message = t(language_for(request), f"error.{code}")
     return JSONResponse({"error": {"code": code, "message": message, "details": None}}, status_code=403)
+
+
+class GuestReadOnlyMiddleware(BaseHTTPMiddleware):
+    """Enforced on the server for the guest site, whatever the page offers: no request may change data."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if request.method not in SAFE_METHODS and not any(p.match(path) for p in GUEST_ALLOWED_WRITES):
+            return _forbidden(request, "read_only")
+        if path.startswith(GUEST_BLOCKED_PREFIXES):
+            return _forbidden(request, "read_only")
+        return await call_next(request)
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
@@ -62,7 +86,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 if urlsplit(origin).netloc != request.headers.get("host", ""):
                     return _forbidden(request, "forbidden_origin")
             token = request.headers.get("x-csrf-token", "")
-            if not hmac.compare_digest(token, csrf_token()):
+            if not hmac.compare_digest(token, csrf_token(request_role(request))):
                 return _forbidden(request, "csrf_failed")
         response = await call_next(request)
         is_docs = path in ("/docs", "/redoc") or path.startswith("/docs/")

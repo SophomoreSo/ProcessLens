@@ -12,11 +12,11 @@
       <h2>{{ t('task.logs') }}</h2>
       <div class="actions">
         <select id="log-select" aria-label="{{ t('task.logs') }}"></select>
-        <button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>
+        {% if admin %}<button type="button" class="btn btn-sm" id="delete-log">{{ t('common.delete') }}</button>{% endif %}
       </div>
       <div id="log-info" class="small" style="margin-top:8px"></div>
     </div>
-    <div>
+    {% if admin %}<div>
       <h2>{{ t('task.import') }}</h2>
       <form id="preview-form" class="actions">
         <input type="file" id="task-file" accept=".csv,text/csv" required>
@@ -35,7 +35,7 @@
       </form>
       <p class="small muted">{{ t('task.privacy_note') }}</p>
       <div id="upload-status"></div>
-    </div>
+    </div>{% endif %}
   </div>
 </section>
 <div id="task-body" class="hidden">
@@ -76,7 +76,7 @@
     <div data-panel="switches" class="hidden"><div id="switches-view"></div></div>
     <div data-panel="dfg" class="hidden"><p class="small muted">{{ t('task.dfg_frequency_only') }}</p><div id="dfg-view"></div></div>
     <div data-panel="cases" class="hidden">
-      <label>{{ t('task.linked_dataset') }}<select id="link-dataset"></select></label>
+      {% if admin %}<label>{{ t('task.linked_dataset') }}<select id="link-dataset"></select></label>{% endif %}
       <div id="cases-view" style="margin-top:8px"></div>
     </div>
   </section>

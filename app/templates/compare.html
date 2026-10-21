@@ -6,6 +6,7 @@
     <p>{{ t('cmp2.intro') }}</p>
   </div>
 </div>
+{% if admin %}
 <section class="card">
   <h2>{{ t('cmp2.setup') }}</h2>
   <div id="algo-choices" class="algo-choices"></div>
@@ -36,6 +37,9 @@
   <div class="actions"><button type="button" class="btn btn-primary" id="run-compare">{{ t('cmp2.run') }}</button></div>
   <div id="cmp-status" style="margin-top:10px"></div>
 </section>
+{% else %}
+<p class="notice info small">{{ t('guest.compare_note') }}</p>
+{% endif %}
 <section class="card hidden" id="cmp-result"></section>
 <section class="card hidden" id="side-by-side">
   <h2>{{ t('cmp2.side_by_side') }}</h2>

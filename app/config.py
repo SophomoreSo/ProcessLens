@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     # Host headers accepted (protects against DNS-rebinding).
     allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["127.0.0.1", "localhost"])
 
+    # --- Guest (read-only) site --------------------------------------------
+    # A second listener with the read-only guest layout for other people.
+    # The admin site above always stays on loopback; the guest site may listen
+    # on all interfaces because it cannot change anything.
+    guest_enabled: bool = False
+    guest_host: str = "0.0.0.0"
+    guest_port: int = 8080
+    # Host headers accepted by the guest site ("*" = any; set your hostname to restrict).
+    guest_allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])
+
     # --- Storage ---------------------------------------------------------
     data_dir: Path = PROJECT_ROOT / "data"
     database_url: str | None = None  # default: sqlite file in data_dir
@@ -67,7 +77,7 @@ class Settings(BaseSettings):
     cache_max_entries: int = 256
     log_level: str = "INFO"
 
-    @field_validator("allowed_hosts", mode="before")
+    @field_validator("allowed_hosts", "guest_allowed_hosts", mode="before")
     @classmethod
     def _split_hosts(cls, v):
         if isinstance(v, str):

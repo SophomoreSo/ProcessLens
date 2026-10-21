@@ -1,5 +1,5 @@
 import {
-  $, api, badge, bootPage, clear, currentDatasetId, fmtInt, fmtTs, getFilterOptions, h, linkWith, loading,
+  $, api, badge, bootPage, IS_ADMIN, clear, currentDatasetId, fmtInt, fmtTs, getFilterOptions, h, linkWith, loading,
   noDatasetState, pager, refreshAlertBadge, reveal, SEVERITY_LABEL, showError, t, table, toast,
 } from "./core.js";
 
@@ -108,10 +108,10 @@ async function loadAlerts() {
     { key: "case", label: t("common.case"), render: (a) => h("a", { class: "mono", href: linkWith("/cases", { filters: {}, extra: { case: a.case_id } }) }, a.case_id) },
     { key: "message", label: t("finding.col.message"), render: (a) => h("div", {}, a.message, a.condition_active ? null : h("div", { class: "small muted" }, t("al.condition_gone"))) },
     { key: "detected", label: t("al.first_detected"), render: (a) => fmtTs(`${a.first_detected_at}Z`, "UTC") },
-    { key: "actions", label: "", render: (a) => h("div", { class: "actions" },
+    { key: "actions", label: "", render: (a) => (!IS_ADMIN ? null : h("div", { class: "actions" },
       a.status !== "acknowledged" && a.status !== "resolved" ? h("button", { type: "button", class: "btn btn-sm", onclick: () => setStatus(a, "acknowledged") }, t("al.acknowledge")) : null,
       a.status !== "resolved" ? h("button", { type: "button", class: "btn btn-sm", onclick: () => setStatus(a, "resolved") }, t("al.resolve")) : null,
-      a.status !== "open" ? h("button", { type: "button", class: "btn btn-sm", onclick: () => setStatus(a, "open") }, t("al.reopen")) : null) },
+      a.status !== "open" ? h("button", { type: "button", class: "btn btn-sm", onclick: () => setStatus(a, "open") }, t("al.reopen")) : null)) },
   ], res.items), pager({ page: res.page, pageSize: res.page_size, total: res.total }, (p) => { page = p; loadAlerts(); }));
   reveal(box.querySelector("tbody"), { stagger: 25 });
 }
@@ -134,18 +134,18 @@ async function render() {
       { key: "severity", label: t("al.severity"), render: (r) => badge(SEVERITY_LABEL[r.severity] || r.severity, r.severity) },
       { key: "enabled", label: t("common.enabled"), render: (r) => (r.enabled ? badge(t("common.enabled"), "ok") : badge(t("common.disabled"))) },
       { key: "last", label: t("al.last_evaluated"), render: (r) => (r.last_evaluated_at ? fmtTs(`${r.last_evaluated_at}Z`, "UTC") : t("common.never")) },
-      { key: "actions", label: "", render: (r) => h("div", { class: "actions" },
+      { key: "actions", label: "", render: (r) => (!IS_ADMIN ? null : h("div", { class: "actions" },
         h("button", { type: "button", class: "btn btn-sm", onclick: () => openEditor(r) }, t("common.edit")),
         h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: async () => {
           if (!confirm(t("al.delete_confirm", { name: r.name }))) return;
           try { await api(`/api/datasets/${ds}/alert-rules/${r.id}`, { method: "DELETE" }); toast(t("al.rule_deleted")); refreshAlertBadge(); render(); } catch (err) { toast(err.message, "error"); }
-        } }, t("common.delete"))) },
+        } }, t("common.delete")))) },
     ], rules) : h("div", { class: "state" }, h("div", { class: "title" }, t("al.no_rules.title")), t("al.no_rules.hint")));
   page = 1;
   loadAlerts();
 }
 
-$("#evaluate-now").addEventListener("click", async () => {
+$("#evaluate-now")?.addEventListener("click", async () => {
   const ds = currentDatasetId();
   if (!ds) return toast(t("common.load_dataset_first"), "error");
   const btn = $("#evaluate-now");
@@ -158,7 +158,7 @@ $("#evaluate-now").addEventListener("click", async () => {
     render();
   } catch (err) { showError($("#eval-result"), err); } finally { btn.disabled = false; }
 });
-$("#new-alert-rule").addEventListener("click", () => (currentDatasetId() ? openEditor() : toast(t("common.load_dataset_first"), "error")));
+$("#new-alert-rule")?.addEventListener("click", () => (currentDatasetId() ? openEditor() : toast(t("common.load_dataset_first"), "error")));
 $("#status-filter").addEventListener("change", () => { page = 1; loadAlerts(); });
 $("#active-only").addEventListener("change", () => { page = 1; loadAlerts(); });
 bootPage(render, { filters: false });

@@ -35,7 +35,7 @@
   </section>
   <div class="actions">
     <button type="submit" class="btn btn-primary" id="save-settings">{{ t('common.save') }}</button>
-    <span class="small muted">{{ t('set.saved_where') }}</span>
+    <span class="small muted">{{ t('set.saved_where') if admin else t('guest.settings_where') }}</span>
   </div>
 </form>
 {% endblock %}

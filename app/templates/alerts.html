@@ -6,8 +6,8 @@
     <p>{{ t('al.intro') }}</p>
   </div>
   <div class="actions">
-    <button type="button" class="btn" id="new-alert-rule">{{ t('al.new_rule') }}</button>
-    <button type="button" class="btn btn-primary" id="evaluate-now">{{ t('al.evaluate_now') }}</button>
+    {% if admin %}<button type="button" class="btn" id="new-alert-rule">{{ t('al.new_rule') }}</button>
+    <button type="button" class="btn btn-primary" id="evaluate-now">{{ t('al.evaluate_now') }}</button>{% endif %}
   </div>
 </div>
 <p class="notice info"><b>{{ t('al.no_monitoring') }}</b> {{ t('al.no_monitoring_detail') }}</p>

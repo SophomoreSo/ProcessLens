@@ -1,5 +1,5 @@
 import {
-  $, api, applyFilters, badge, bootPage, clear, currentDatasetId, filterParams, fmtInt, fmtPct, getFilterOptions, h,
+  $, api, applyFilters, badge, bootPage, IS_ADMIN, clear, currentDatasetId, filterParams, fmtInt, fmtPct, getFilterOptions, h,
   linkWith, loading, noDatasetState, pager, readFilters, RESULT_LABEL, reveal, showError, STATUS_LABEL, t, table, toast,
 } from "./core.js";
 
@@ -163,8 +163,8 @@ async function render() {
       { key: "enabled", label: t("common.status"), render: (r) => (r.rule.enabled ? badge(t("common.enabled"), "ok") : badge(t("common.disabled"))) },
       { key: "actions", label: "", render: (r) => h("div", { class: "actions" },
         h("button", { type: "button", class: "btn btn-sm btn-primary", disabled: !r.rule.enabled, onclick: (e) => { e.stopPropagation(); evaluate(r.rule); } }, t("cf.evaluate")),
-        h("button", { type: "button", class: "btn btn-sm", onclick: (e) => { e.stopPropagation(); openEditor(r.rule); } }, t("common.edit")),
-        h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: (e) => { e.stopPropagation(); removeRule(r.rule); } }, t("common.delete"))) },
+        IS_ADMIN ? h("button", { type: "button", class: "btn btn-sm", onclick: (e) => { e.stopPropagation(); openEditor(r.rule); } }, t("common.edit")) : null,
+        IS_ADMIN ? h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: (e) => { e.stopPropagation(); removeRule(r.rule); } }, t("common.delete")) : null) },
     ], rules));
   reveal(root.querySelector("tbody"), { stagger: 35 });
   if (evalState.rule) {
@@ -173,7 +173,7 @@ async function render() {
   }
 }
 
-$("#new-rule").addEventListener("click", () => {
+$("#new-rule")?.addEventListener("click", () => {
   if (!currentDatasetId()) return toast(t("common.load_dataset_first"), "error");
   openEditor();
 });
