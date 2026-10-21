@@ -1,16 +1,30 @@
 # ProcessLens
 
 ProcessLens is a local-first, single-user web application for **process mining and process
-analysis of case-centric event logs**. A business analyst can import a CSV event log, map and
-validate it, and then explore the process: KPIs, a directly-follows graph, variants, case
-histories, performance, rule-based conformance, cohort comparisons, in-app alerts and exports.
+analysis**. A business analyst can import a CSV event log, map and validate it, and then explore
+the process: KPIs, a directly-follows graph, variants, case histories, performance, rule-based
+conformance, cohort comparisons, in-app alerts and exports. On top of that it offers process
+discovery with 14 algorithms, formal conformance checking (token replay, alignments, soundness,
+declarative checks), an algorithm comparison workspace with case-level train/test splits,
+object-centric mining of OCEL 2.0 logs, task mining on exported user-interaction events, and
+guided, question-driven analysis.
 
 > ProcessLens is an independent implementation with its own branding. It is inspired by the
 > kind of analysis commercial process-mining suites offer, but it is **not affiliated with
 > Celonis**, does not claim feature parity, and is not compatible with proprietary Celonis
 > features or formats.
 
-Precise definitions of every metric, filter and rule: **[docs/METRICS.md](docs/METRICS.md)**.
+Documentation:
+
+* **[docs/METRICS.md](docs/METRICS.md)** — definitions of every metric, filter and rule.
+* **[docs/MINING.md](docs/MINING.md)** — discovery algorithms (support matrix, parameters,
+  limitations, unavailable algorithms), model exports, formal conformance, comparison and
+  mining runs.
+* **[docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md)** — OCEL 2.0 import, counting rules,
+  OC-DFG, object timelines, OC Petri nets, flattening.
+* **[docs/TASK_MINING.md](docs/TASK_MINING.md)** — task-event import, sessionization, task
+  analyses, privacy.
+* **[docs/GUIDED_ANALYSIS.md](docs/GUIDED_ANALYSIS.md)** — questions and answer structure.
 
 ---
 
@@ -64,7 +78,8 @@ restarts. Without compose: `docker build -t processlens .` and
 All settings are environment variables with the prefix `PROCESSLENS_` (or a `.env` file);
 see [.env.example](.env.example). Important ones: `HOST` (default `127.0.0.1`), `PORT`,
 `DATA_DIR`, `DATABASE_URL`, `SECRET_KEY`, `MAX_UPLOAD_MB` (200), `MAX_ROWS` (1,000,000),
-`ALLOWED_HOSTS`.
+`ALLOWED_HOSTS`, `MINING_TIMEOUT_S` (300), `MINING_MAX_TIMEOUT_S` (3600),
+`MINING_MAX_ALIGNMENT_VARIANTS` (2000).
 
 The launcher (`python -m app`) **refuses to bind to a non-loopback address** unless
 `PROCESSLENS_ALLOW_NON_LOOPBACK_BIND=true` is set (the Docker image sets it because the port
@@ -75,8 +90,9 @@ is published on loopback only).
 ## Assumptions and architecture
 
 * **Single user, single process, local machine.** No authentication; bound to localhost.
-* **Case-centric event logs**: every event belongs to exactly one case. Object-centric logs
-  are a roadmap item.
+* **Case-centric datasets** (every event belongs to exactly one case) are the core. Object-centric
+  logs (OCEL 2.0) and task-event logs are stored in their own tables and are never forced into
+  the case table; flattening an OCEL log into a dataset is an explicit, acknowledged action.
 * **Business logic in Python.** The browser only fetches, formats and renders; every number
   on screen comes from the API.
 * **Explicitness over convenience**: nothing is silently dropped, timezones and DST handling
@@ -92,6 +108,8 @@ Services (app/services)
    ingestion → validation → importer/jobs ─┐
    eventlog (cached per dataset version)   ├─ filtering ─ analytics / conformance / alerts / exports
    cache (LRU keyed by version + filters) ─┘
+   ocel · tasks · guide (question answering over the services above)
+   mining runs (app/mining): registry → supervisor thread → isolated worker process (PM4Py)
    │
 SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / PostgreSQL (configurable)
 ```
@@ -101,9 +119,9 @@ SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / Pos
 | API & pages | FastAPI 0.156, Starlette, Jinja2 templates, OpenAPI at `/docs` |
 | Validation | Pydantic 2 |
 | Persistence | SQLAlchemy 2.1, Alembic, SQLite (WAL) |
-| Analysis | pandas 3.0, numpy; PM4Py 2.7 for XES export and as an independent cross-check of DFG discovery in the tests |
+| Analysis | pandas 3.0, numpy; PM4Py 2.7.23 for discovery, formal conformance, OC Petri nets and XES export (run in a separate worker process), and as a cross-check of DFG discovery in the tests |
 | Frontend | HTML5, CSS3, vanilla ES modules, Cytoscape.js 3.30 (+ dagre layout), Plotly.js 2.35 (basic bundle) — vendored in `app/static/vendor`, no CDN at runtime |
-| Tests | pytest (87 tests) |
+| Tests | pytest (146 tests) |
 
 ### Project structure
 
@@ -117,19 +135,26 @@ app/
   security.py        CSRF token, Origin check, security headers / CSP
   errors.py          uniform JSON error responses
   models/            Upload, Dataset, Event, ImportFinding, QuarantinedRow, ImportJob,
-                     ConformanceRule, AlertRule, Alert
+                     ConformanceRule, AlertRule, Alert, UserPreferences, MiningRun,
+                     MiningArtifact, ReferenceModel, Ocel* (log, events, objects, attributes,
+                     E2O, O2O), TaskLog, TaskEvent
   schemas/           Pydantic request/response models, FilterSpec
-  api/               imports, datasets, analytics, conformance, alerts, exports, meta, pages
+  api/               imports, datasets, analytics, conformance, alerts, exports, meta,
+                     preferences, mining, ocel, tasks, guide, pages
   services/          ingestion, validation, importer, jobs, eventlog, filtering, analytics,
-                     conformance, alerts, exports, cache, demo
+                     conformance, alerts, exports, cache, demo, preferences, ocel, tasks, guide
+  mining/            registry (algorithm adapters), tasks (PM4Py calls), serialize (model
+                     JSON), worker (isolated process), runs (snapshots, cache, supervisor)
+  i18n/              translation catalogs (en, ko, pl)
   templates/         Jinja2 pages (base + one per page)
   static/css|js|img  styles and page modules
   static/vendor/     Cytoscape.js, dagre, cytoscape-dagre, Plotly.js (MIT, see README there)
 migrations/          Alembic environment + versions
-sample_data/         synthetic demo log + validation-demo file
-scripts/             generate_demo_data.py, benchmark.py
-tests/               pytest suite + hand-checkable fixture
-docs/METRICS.md      metric, filter, rule definitions
+sample_data/         synthetic P2P demo log, validation-demo file, OCEL demo, task-event demo
+scripts/             generate_demo_data.py, generate_ocel_demo.py, generate_task_demo.py,
+                     benchmark.py, i18n_merge.py
+tests/               pytest suite + hand-checkable fixtures (tests/fixtures/README.md)
+docs/                METRICS.md, MINING.md, OBJECT_CENTRIC.md, TASK_MINING.md, GUIDED_ANALYSIS.md
 Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 ```
 
@@ -166,6 +191,7 @@ increments the dataset **version**, invalidates cached analytics and evaluates a
 
 | Page | What it shows |
 |---|---|
+| **Guided analysis** | Predefined questions (longest transitions, rework variants, SLA violations, department differences, object relationships and delays) answered with metric definition, dataset version, filters, sample size, chart, table and links. |
 | **Overview** | Case/event/activity counts, completed vs incomplete/unknown, observed duration, completed throughput and open-case age (each with its population and n), rework rate, variant count, daily case starts, duration distribution, top variants, bottleneck candidates. |
 | **Process explorer** | Directly-follows graph with synthetic start/end markers, frequency or elapsed-time mode (median/p90/mean), edge occurrences and distinct cases in tooltips, zoom/pan/fit/reset, render-only node/edge thresholds, legend, click-through to matching cases, transitions CSV and XES export. |
 | **Variants** | Sequences with case count, share, cumulative coverage, median/p90 observed duration and rework markers. Selecting a variant highlights its path and lists its cases; it can be applied as a global filter. |
@@ -173,6 +199,10 @@ increments the dataset **version**, invalidates cached analytics and evaluates a
 | **Performance** | Transitions ranked by median/p90 elapsed time; resource and department comparisons with sample sizes; activity execution durations (when start timestamps exist); two-cohort comparison. All labeled as descriptive associations. |
 | **Conformance** | Rule CRUD (required, forbidden, A precedes B, max duration, max occurrences, start/end activity), compliant/violating/not-evaluable counts, case-level explanations, “use as filter”, CSV export. |
 | **Alerts** | Alert rules (duration threshold, rework, conformance violation), “Evaluate rules now”, alert list with open/acknowledged/resolved workflow. |
+| **Model discovery** | Algorithm picker generated from the registry (parameters, defaults, preconditions, limitations, availability), background discovery runs with progress and cancel, native model views (process tree, Petri net, heuristics net, BPMN, POWL, transition system, DECLARE, log skeleton, temporal profile), exports (PTML, PNML, BPMN, JSON, PNG), provenance, formal conformance on the discovered or an approved/uploaded reference model with case diagnostics, run history. |
+| **Algorithm comparison** | Up to 8 algorithms on one population with an optional case-level train/test split; runtime, representation, size, fitness/precision, soundness, declarative fit, parameters and warnings side by side (no combined score); two models side by side; CSV/JSON export. |
+| **Object-centric** | OCEL 2.0 JSON import with validation findings, unique event/object/relationship counts, object-type filter, object-centric DFG, object timelines and related objects, relationships vs lifetimes, OC Petri net discovery, explicit flattening to a dataset. |
+| **Task mining** | Task-event CSV import (privacy checks), configurable sessionization, task variants, repeated task sequences, application switches, task DFG, links to business cases. |
 | **Datasets** | Load demo data, dataset list with versions and source metadata, analysis settings (completion rule, reference time, display timezone), import findings and quarantine downloads, re-import, deletion with typed-name confirmation. |
 | **Settings** | Language (English, 한국어, Polski) and animations (follow system / on / off); stored in the database. |
 
@@ -227,6 +257,11 @@ Interactive OpenAPI documentation: <http://127.0.0.1:8000/docs>. Main routes:
 | Conformance | `GET/POST …/conformance-rules`, `GET/PUT/DELETE …/conformance-rules/{rid}`, `GET …/conformance-rules/{rid}/evaluation`, `GET …/conformance/summary` |
 | Alerts | `GET/POST …/alert-rules`, `PUT/DELETE …/alert-rules/{rid}`, `POST …/alert-rules/evaluate`, `GET /api/alerts`, `GET /api/alerts/counts`, `PATCH /api/alerts/{id}` |
 | Exports | `GET …/exports/{kind}.{fmt}`, `GET …/exports/events.xes` |
+| Preferences | `GET/PUT /api/preferences` |
+| Mining | `GET /api/mining/algorithms`, `POST …/mining/discover`, `POST …/mining/conformance`, `POST …/mining/compare`, `GET /api/mining/runs`, `GET /api/mining/runs/{id}` (+ `/cancel`, `/model`, `/cases`, `/export/{fmt}`), `GET/POST …/reference-models`, `POST …/reference-models/upload` — see [docs/MINING.md](docs/MINING.md) |
+| Object-centric | `GET /api/ocel`, `POST /api/ocel/upload`, `POST /api/ocel/demo`, `GET/DELETE /api/ocel/{id}`, `GET /api/ocel/{id}/stats`, `…/ocdfg`, `…/objects`, `…/objects/{oid}`, `…/relationship-delays`, `…/projection-preview`, `POST …/project`, `POST …/ocpn` |
+| Task mining | `GET /api/tasks`, `POST /api/tasks/preview`, `POST /api/tasks/upload`, `POST /api/tasks/demo`, `GET/DELETE /api/tasks/{id}`, `PUT …/link`, `GET …/summary`, `…/variants`, `…/sequences`, `…/switches`, `…/dfg`, `…/cases` |
+| Guided analysis | `GET /api/guide/questions`, `GET /api/guide/answer` |
 
 Errors always look like `{"error": {"code", "message", "details"}}` with meaningful status
 codes (404 missing, 409 conflicting state, 413 too large, 422 invalid input, 403 CSRF/origin).
@@ -250,8 +285,16 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
   Europe/Berlin, completion from the `case_status` column, fixed reference time
   2025-06-27 16:00 UTC), adds six example conformance rules and three alert rules, and runs
   the alert evaluation. All demo screens show a **SYNTHETIC DEMO DATA** badge.
-* `tests/fixtures/hand_check.csv` — 16-event fixture with expected metrics worked out by hand
-  in [tests/fixtures/README.md](tests/fixtures/README.md).
+* `sample_data/ocel_demo.json` — **synthetic** OCEL 2.0 order-to-delivery log (customers,
+  orders, items, packages; 527 events, 261 objects, shared events, changing order status and
+  price), from `scripts/generate_ocel_demo.py`; *Object-centric → Load demo log*.
+* `sample_data/task_events_demo.csv` — **synthetic** task events of six pseudonymous
+  accounts-payable clerks (3,968 events) linked to P2P demo case ids, from
+  `scripts/generate_task_demo.py`; *Task mining → Load demo*.
+* `tests/fixtures/` — hand-checkable fixtures with expected values in
+  [tests/fixtures/README.md](tests/fixtures/README.md): `hand_check.csv` (16 events),
+  `mining_fixture.csv` (22 cases, fitting and deviating behaviour), `ocel_small.json`
+  (shared events), `task_events_small.csv` (sessionization).
 
 ---
 
@@ -259,7 +302,23 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
 
 ### Automated (run for this release)
 
-`python -m pytest` → **87 passed** (Python 3.11.6, macOS arm64). The original 71 tests also passed in a
+**Mining, object-centric, task-mining and guided-analysis release:** `python -m pytest` →
+**146 passed** (Python 3.11.6, PM4Py 2.7.23.11, macOS arm64): 87 earlier tests plus
+`test_mining.py` (32), `test_ocel.py` (10), `test_tasks.py` (8), `test_guide.py` (8) and a determinism check of the OCEL and task demo generators; the
+translation tests cover the new pages and keys in all three languages. See the *Tests*
+section of each document in `docs/` for what they assert. No new dependencies were added.
+
+Browser check of this release (built-in browser against `python -m app` with a scratch data
+directory): Model discovery with IMf (process tree, Petri net and BPMN tabs, provenance,
+alignments fitness 0.895 / precision 0.856, token replay 0.952, sound, deviating-case
+diagnostics); Algorithm comparison with a 409/191 train/test split (Alpha alignments shown as
+*failed*, unavailable algorithms disabled); Object-centric demo (KPIs, OC-DFG coloured by
+object type, object timeline with navigation to related objects, OC Petri net with variable
+arcs); Task mining demo (609 sessions, variants, task DFG, 480 cases matched in the P2P demo
+dataset with links to the case explorer); Guided analysis SLA question (184 of 517 evaluable
+cases over the demo's 720 h rule, histogram with threshold).
+
+**Earlier release:** `python -m pytest` → **87 passed** (Python 3.11.6, macOS arm64). The original 71 tests also passed in a
 fresh venv created with `python3.11 -m venv` + `pip install -r requirements-dev.txt` (`pip check`: no broken
 requirements). Coverage includes: valid and
 invalid imports, identifier preservation, timestamp normalization and DST policies, tie
@@ -364,11 +423,30 @@ dependency and container scanning, and an operational monitoring/patching proces
 
 ### Background jobs
 
+Mining runs (discovery, conformance, comparison, model import, OC Petri nets) are separate:
+they are persisted in `mining_runs`, executed one at a time by a supervisor thread in a
+**separate worker process** that can be killed for cancellation and timeouts, cached by their
+inputs, and marked *interrupted* if the server stops while they are queued or running. See
+[docs/MINING.md](docs/MINING.md).
+
 Imports run in a single worker thread inside the web process (`app/services/jobs.py`). They
 are not distributed and do not survive a restart. Because each import commits in one
 transaction, an interrupted import leaves no partial data; on start-up unfinished jobs are
 marked **interrupted** with an explanation, and the user re-runs the import. Running several
 server processes against one database is not supported.
+
+### Database migrations
+
+| Revision | Content |
+|---|---|
+| `0001` | initial schema (uploads, datasets, events, findings, quarantine, jobs, rules, alerts) |
+| `0002` | user preferences, translatable message keys |
+| `0003` | mining runs, run artifacts, reference models |
+| `0004` | object-centric logs: events, objects, object attributes, E2O and O2O relationships |
+| `0005` | task-event logs and task events |
+
+Migrations run automatically on start (`alembic upgrade head`); existing databases are upgraded
+in place without data changes.
 
 ### PostgreSQL
 
@@ -380,8 +458,8 @@ suite** in this release.
 
 Python dependencies are permissively licensed **except PM4Py, which is AGPL-3.0** (PM4Py's own
 start-up banner points out that commercial use without open-sourcing requires a commercial
-license). PM4Py is only imported lazily for the XES export and in tests; review the license
-before distributing ProcessLens. Vendored JS libraries are MIT-licensed (see
+license). PM4Py is used at runtime for discovery, formal conformance, OC Petri nets (in the
+mining worker process) and the XES export; review the license before distributing ProcessLens. Vendored JS libraries are MIT-licensed (see
 `app/static/vendor/README.md`).
 
 ---
@@ -402,14 +480,30 @@ before distributing ProcessLens. Vendored JS libraries are MIT-licensed (see
 * Local-deployment security controls listed above; Docker image and compose file.
 * User settings: interface language (English, Korean, Polish) with localized server messages, and
   animations (follow system / on / off).
+* Process discovery with an extensible algorithm registry (IM, IMf, IMd, Heuristics,
+  Heuristics++, Alpha, Alpha+, POWL, DECLARE, Log Skeleton, transition systems, temporal
+  profiles, ILP, Genetic; Split Miner and Fuzzy Miner listed as unavailable with reasons),
+  native model views and PTML/PNML/BPMN/JSON/PNG exports.
+* Formal conformance: token replay, alignments, soundness, DECLARE, log-skeleton and
+  temporal-profile checks with explicit statuses, precision, case diagnostics, execution
+  limits; discovered vs approved/uploaded reference models.
+* Algorithm comparison with reproducible case-level train/test splits and exports.
+* Background mining runs with cancellation, timeouts, persistent status, history, caching
+  and honest progress.
+* Object-centric mining of OCEL 2.0 JSON logs, task mining on exported interaction events,
+  and guided question-driven analysis.
 
 ## Known limitations
 
-* Case-centric only; one case ID per event.
-* The directly-follows graph is not a process model (no BPMN/Petri net, no concurrency).
+* Case-centric datasets have one case ID per event; object-centric logs have their own,
+  separate analyses (no OCEL conformance checking; OCEL import is JSON only).
+* The directly-follows graph on the Process explorer is not a process model; use Model
+  discovery for Petri nets, BPMN and other models.
+* Split Miner and Fuzzy Miner are not available; SVG export is not available (PNG only).
+* Mining runs execute one at a time; very large logs can hit the alignment variant limit or
+  the run timeout, which is reported explicitly.
 * No event-level filtering mode (by design, to keep traces intact).
 * Cohort comparison is descriptive: no statistical significance tests or causal inference.
-* Rule-based conformance only; no token replay or alignments.
 * Alerts are evaluated on demand and after imports; no scheduler, no notifications.
 * In-memory analytics for the selected dataset; tested to ~100k events, not millions.
 * Single process, single user, no authentication; PostgreSQL untested.
@@ -420,11 +514,8 @@ before distributing ProcessLens. Vendored JS libraries are MIT-licensed (see
 
 ## Roadmap (not implemented)
 
-* **Object-centric process mining**: objects, events and many-to-many event–object relations,
-  OCEL 2.0 import, object-type perspectives. The current schema keeps cases and events in
-  dedicated tables so object tables can be added alongside rather than overloading `case_id`.
-* **Formal process discovery and alignment-based conformance** (e.g. inductive miner, Petri
-  nets/BPMN, fitness/precision).
+* **Object-centric conformance checking** and OCEL XML/SQLite import.
+* **Split Miner / Fuzzy Miner** once a verified implementation can be integrated.
 * **Scheduled connectors and incremental ingestion**; ERP and CRM integrations.
 * **External workflow automation** (tickets, messages) with explicit approval controls.
 * **Multi-user workspaces**, authentication, role-based permissions, audit trail.
