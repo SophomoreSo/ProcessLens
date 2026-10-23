@@ -63,9 +63,8 @@ QUESTIONS: tuple[Question, ...] = (
     Question("department_differences", "dataset", "guide.q.department_differences", "guide.d.department_differences",
              "guide.m.participating_duration", "guide.def.participating_duration",
              (GuideParam("min_cases", "int", 5, 1, None, label_key="guide.p.min_cases"),)),
-    Question("object_relationship_delays", "ocel", "guide.q.object_relationship_delays",
-             "guide.d.object_relationship_delays", "guide.m.object_lifetime", "guide.def.object_lifetime",
-             (GuideParam("object_type", "object_type", None, label_key="guide.p.object_type"),)),
+    Question("object_relationship_delays", "dataset", "guide.q.object_relationship_delays",
+             "guide.d.object_relationship_delays", "guide.m.object_lifetime", "guide.def.object_lifetime"),
 )
 BY_ID = {q.id: q for q in QUESTIONS}
 
@@ -294,18 +293,17 @@ def department_differences(q: Question, p: dict, ds: Dataset, view: FilteredView
 
 
 # --------------------------------------------------------------------------- object-centric question
-def object_relationship_delays(q: Question, p: dict, db: Session, ocel: OcelLog) -> dict:
-    types = [t_["name"] for t_ in ocel.object_types]
-    otype = p["object_type"] or (types[0] if types else None)
-    if otype not in types:
-        raise GuideError("ocel.err.unknown_object_type", types=str(otype))
-    p = {**p, "object_type": otype}
+def object_relationship_delays(q: Question, p: dict, db: Session, ds: Dataset, view: FilteredView) -> dict:
+    """Objects of the lead type, grouped by how many related objects of other types they have."""
+    otype = view.log.object_type
+    ocel = db.get(OcelLog, ds.ocel_log_id) if ds.ocel_log_id else None
+    if ocel is None:
+        raise GuideError("guide.err.needs_dataset")
     data = ocel_svc.load(db, ocel)
     r = ocel_svc.relationship_delays(data, otype)
-    prov = {"source": "ocel", "ocel_log_id": ocel.id, "ocel_log_name": ocel.name, "ocel_version": ocel.version,
-            "filters": {"object_type": otype}, "population": {"objects": r["objects"]},
-            "sample": {"n": r["objects"], "label_key": "guide.n.objects"}}
-    links = [{"label_key": "guide.link.ocel_relations", "href": f"/ocel?{urlencode({'log': ocel.id, 'tab': 'relations'})}"}]
+    prov = {**_dataset_provenance(ds, view, r["objects"], "guide.n.objects"), "population": {
+        "cases": view.case_count, "total_cases": view.total_case_count}}
+    links = [{"label_key": "guide.link.ocel_relations", "href": f"/relationships?{_query(ds, view)}"}]
     best = None
     rows = []
     for g in r["groups"]:
@@ -343,15 +341,11 @@ def object_relationship_delays(q: Question, p: dict, db: Session, ocel: OcelLog)
 
 
 def answer(db: Session, question_id: str, raw_params: dict, *, ds: Dataset | None = None,
-           view: FilteredView | None = None, ocel: OcelLog | None = None) -> dict:
+           view: FilteredView | None = None) -> dict:
     q = BY_ID.get(question_id)
     if q is None:
         raise GuideError("guide.err.unknown_question", question=question_id)
     p = validate_params(q, raw_params)
-    if q.source == "ocel":
-        if ocel is None:
-            raise GuideError("guide.err.needs_ocel")
-        return object_relationship_delays(q, p, db, ocel)
     if ds is None or view is None:
         raise GuideError("guide.err.needs_dataset")
     if q.id == "longest_transitions":
@@ -360,5 +354,7 @@ def answer(db: Session, question_id: str, raw_params: dict, *, ds: Dataset | Non
         return rework_variants(q, p, ds, view)
     if q.id == "sla_violations":
         return sla_violations(q, p, ds, view, db)
+    if q.id == "object_relationship_delays":
+        return object_relationship_delays(q, p, db, ds, view)
     return department_differences(q, p, ds, view)
 

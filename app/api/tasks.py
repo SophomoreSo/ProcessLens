@@ -100,8 +100,9 @@ def demo(db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     raw = DEMO_FILE.read_bytes()
     mapping = svc.suggest_mapping(svc.read_table(raw).columns.tolist())
     parsed = svc.parse(raw, mapping)
-    demo_ds = db.scalars(select(Dataset).where(Dataset.is_demo.is_(True), Dataset.status == "ready")
-                         .order_by(Dataset.id.desc())).first()
+    demo_ds = db.scalars(select(Dataset).where(Dataset.is_demo.is_(True), Dataset.status == "ready",
+                                               Dataset.source_filename == "p2p_demo_events.csv")
+                         .order_by(Dataset.id.desc())).first()  # task events refer to purchase orders
     tl = svc.store(db, parsed, raw, t(lang, "task.demo_name"), DEMO_FILE.name, mapping, "UTC",
                    demo_ds.id if demo_ds else None, t(lang, "task.demo_description"), is_demo=True)
     return _out(tl)

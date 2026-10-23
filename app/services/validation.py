@@ -139,8 +139,7 @@ def parse_timestamps(raw: pd.Series, opts: TimestampOptions) -> tuple[pd.Series,
 
 def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOptions,
                    max_findings: int | None = None) -> ValidationResult:
-    missing_cols = [c for c in mapping.mapped_columns().values() if c not in table.columns]
-    missing_cols += [c for c in mapping.attributes if c not in table.columns]
+    missing_cols = [c for c in mapping.all_columns() if c not in table.columns]
     if missing_cols:
         raise ValueError(f"Mapped columns not found in file: {sorted(set(missing_cols))}")
 
@@ -285,7 +284,42 @@ def validate_table(table: RawTable, mapping: ColumnMapping, ts_opts: TimestampOp
         ]
     else:
         norm["attributes"] = None
+    # further objects of each event: [(column, object type, [ids])]
+    related: list[list] = [[] for _ in range(n)]
+    for oc in mapping.object_columns:
+        values = raw[oc.column].astype(str).str.strip()
+        parts = values.map(lambda v: [p.strip() for p in (v.split(oc.separator) if oc.separator else [v])
+                                      if p.strip()] if v else [])
+        empty = int((parts.map(len) == 0).sum())
+        if empty:
+            add("info", "object_column_empty", {"column": oc.column, "count": empty}, fld=oc.column)
+        if not oc.separator:
+            multi = int(values.str.contains(r"[;,|]", regex=True).sum())
+            if multi:
+                add("info", "object_column_maybe_multi", {"column": oc.column, "count": multi}, fld=oc.column)
+        for i, ids in enumerate(parts.tolist()):
+            if ids:
+                related[i].append((oc.column, oc.object_type, list(dict.fromkeys(ids))))
+    norm["objects"] = related
+    if mapping.case_attributes:
+        ca = raw[mapping.case_attributes].astype(str)
+        norm["case_attrs"] = [{k: v.strip() for k, v in rec.items() if v.strip() != ""} or None
+                              for rec in ca.to_dict(orient="records")]
+    else:
+        norm["case_attrs"] = None
     norm = norm[~invalid_mask]
+    # an object id has exactly one type (OCEL): the same id under two types is ambiguous
+    types_of: dict[str, set] = {}
+    for cid in norm["case_id"].unique():
+        types_of.setdefault(cid, set()).add(mapping.case_object_type)
+    for rel in norm["objects"]:
+        for _, otype, ids in rel:
+            for oid in ids:
+                types_of.setdefault(oid, set()).add(otype)
+    conflicts = sorted(oid for oid, ts_ in types_of.items() if len(ts_) > 1)
+    if conflicts:
+        add("error", "object_type_conflict", {"count": len(conflicts), "ids": ", ".join(conflicts[:5]),
+                                              "types": ", ".join(sorted(types_of[conflicts[0]]))})
     norm = norm.sort_values(["case_id", "ts", "source_row"], kind="mergesort").reset_index(drop=True)
     norm["seq"] = norm.groupby("case_id", sort=False).cumcount().astype("int64")
 

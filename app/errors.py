@@ -61,8 +61,8 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(IngestionError)
     async def _ingestion_error(req: Request, exc: IngestionError):
         status = 413 if exc.code == "file_too_large" else 422
-        return JSONResponse(_body(exc.code, t(language_for(req), f"error.{exc.code}", **exc.params)),
-                            status_code=status)
+        return JSONResponse(_body(exc.code, t(language_for(req), f"error.{exc.code}", **exc.params),
+                                  getattr(exc, "details", None)), status_code=status)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(req: Request, exc: RequestValidationError):

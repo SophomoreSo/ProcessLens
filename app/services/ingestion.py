@@ -25,6 +25,7 @@ from app.i18n import t
 
 ALLOWED_EXTENSIONS = {".csv", ".txt", ".tsv"}
 XES_SUFFIXES = (".xes.gz", ".xes")  # longest first
+OCEL_SUFFIXES = (".jsonocel", ".json")  # OCEL 2.0 JSON
 SNIFF_BYTES = 256 * 1024
 
 SYNONYMS: dict[str, list[str]] = {
@@ -62,9 +63,10 @@ class IngestionError(Exception):
     The message is the catalog entry ``error.<code>`` rendered with ``params``.
     """
 
-    def __init__(self, code: str, **params):
+    def __init__(self, code: str, details: list | None = None, **params):
         self.code = code
         self.params = params
+        self.details = details  # e.g. the validation findings of a rejected OCEL file
         self.message = t("en", f"error.{code}", **params)
         super().__init__(self.message)
 
@@ -76,7 +78,7 @@ class StagedFile:
     path: Path
     size_bytes: int
     sha256: str
-    source_format: str = "csv"  # csv | xes (path is then the original XES file)
+    source_format: str = "csv"  # csv | xes | ocel (path is then the original file)
 
 
 def xes_suffix(filename: str | None) -> str | None:
@@ -105,11 +107,12 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
     """Stream an upload to a server-generated filename, enforcing the size limit."""
     ext = Path(original_filename or "").suffix.lower()
     xes = xes_suffix(original_filename)
-    if ext not in ALLOWED_EXTENSIONS and not xes:
+    ocel = ext if ext in OCEL_SUFFIXES else None
+    if ext not in ALLOWED_EXTENSIONS and not xes and not ocel:
         raise IngestionError("unsupported_file_type", ext=ext or "-")
     settings.ensure_dirs()
     upload_id = uuid.uuid4().hex
-    stored_name = f"{upload_id}{xes or '.csv'}"
+    stored_name = f"{upload_id}{xes or ('.json' if ocel else '.csv')}"
     path = settings.upload_dir / stored_name
     hasher = hashlib.sha256()
     size = 0
@@ -132,7 +135,8 @@ def stage_upload(stream: BinaryIO, original_filename: str | None, settings: Sett
     if size == 0:
         path.unlink(missing_ok=True)
         raise IngestionError("empty_file")
-    return StagedFile(upload_id, stored_name, path, size, hasher.hexdigest(), "xes" if xes else "csv")
+    return StagedFile(upload_id, stored_name, path, size, hasher.hexdigest(),
+                      "xes" if xes else "ocel" if ocel else "csv")
 
 
 def detect_encoding(path: Path) -> str:

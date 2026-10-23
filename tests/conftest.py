@@ -68,6 +68,20 @@ def run_import(client: TestClient, content: bytes | str, mapping: dict, *, expec
     return job
 
 
+def import_ocel(client: TestClient, content: bytes, main_object_type: str, fields: dict | None = None,
+                name: str = "log.json", expect: str = "succeeded", **options) -> dict:
+    """Upload an OCEL 2.0 JSON file through the wizard and import it. Returns the finished job JSON."""
+    r = client.post("/api/uploads", files={"file": (name, content, "application/json")})
+    assert r.status_code == 201, r.text
+    r = client.post(f"/api/uploads/{r.json()['upload_id']}/import-ocel",
+                    json={"main_object_type": main_object_type, "fields": fields or {}, **options})
+    assert r.status_code == 202, r.text
+    jobs.wait_for(r.json()["id"])
+    job = client.get(f"/api/jobs/{r.json()['id']}").json()
+    assert job["status"] == expect, job
+    return job
+
+
 HAND_MAPPING = ColumnMapping(case_id="case_id", activity="activity", timestamp="timestamp", resource="resource",
                              department="department", cost="cost", case_status="status").model_dump()
 HAND_OPTIONS = {

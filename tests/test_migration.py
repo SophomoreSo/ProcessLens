@@ -105,7 +105,8 @@ def test_upgrade_converts_datasets_and_keeps_kpis(legacy_client):
     sa = datasets["standalone"]
     assert sa["case_count"] == 1  # objects of the main type (the first declared type, order)
     items = client.get(f"/api/datasets/{sa['id']}/overview", params={"object_type": "item"}).json()["data"]
-    assert (items["case_count"], items["event_count"]) == (2, 3)  # i1: place, pick; i2: place
+    # i1: place, pick; i2: place -> 3 object-event rows from 2 unique events
+    assert (items["case_count"], items["event_count"], items["object_event_count"]) == (2, 2, 3)
     with sqlite3.connect(db) as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "legacy_events" in tables and "events" not in tables

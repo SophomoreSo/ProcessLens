@@ -34,6 +34,10 @@ class DatasetOut(ApiModel):
     reference_time: datetime | None
     attribute_columns: list[str]
     import_options: dict
+    main_object_type: str = "case"
+    object_type_settings: dict = Field(default_factory=dict)
+    # [{"name", "objects", "events"}]: object types of the dataset (events = unique related events)
+    object_types: list[dict] = Field(default_factory=list)
 
 
 class DatasetUpdate(BaseModel):
@@ -48,6 +52,9 @@ class DatasetUpdate(BaseModel):
     open_status_values: list[str] | None = None
     reference_time: datetime | None = None
     clear_reference_time: bool = False
+    object_type: str | None = Field(None, description="Object type the analysis settings apply to "
+                                                       "(default: the main object type)")
+    main_object_type: str | None = Field(None, description="Make another object type the main (default) lead type")
 
     @field_validator("display_timezone")
     @classmethod

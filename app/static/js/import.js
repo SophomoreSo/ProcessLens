@@ -10,10 +10,17 @@ const FIELDS = [
   ["start_timestamp", t("field.start_timestamp"), false], ["event_id", t("field.event_id"), false], ["resource", t("field.resource"), false],
   ["department", t("field.department"), false], ["cost", t("field.cost"), false], ["case_status", t("field.case_status"), false],
 ];
-const state = { preview: null, validation: null, step: 1 };
+const state = { preview: null, validation: null, step: 1, roles: {} };
+const ROLES = ["attribute", "case_attribute", "objects", "ignore"];
+const OCEL_FIELDS = [["resource", t("field.resource")], ["department", t("field.department")], ["cost", t("field.cost")],
+  ["start_timestamp", t("field.start_timestamp")]];
+const isOcel = () => state.preview?.source_format === "ocel";
 
 function goto(step) {
   state.step = step;
+  // OCEL files skip the column steps: their timestamps carry offsets and validation ran on upload
+  $("#policy-box")?.classList.toggle("hidden", isOcel());
+  for (const n of [3, 4]) $(`#steps li[data-step="${n}"]`)?.classList.toggle("skipped", isOcel());
   for (const p of $$("[data-panel]")) p.classList.toggle("hidden", Number(p.dataset.panel) > step);
   for (const li of $$("#steps li")) {
     const s = Number(li.dataset.step);
@@ -34,8 +41,12 @@ async function upload(file) {
   try {
     state.preview = await api("/api/uploads", { method: "POST", form });
   } catch (err) { return showError(status, err); }
-  clear(status, h("div", { class: "notice ok" }, t(state.preview.source_format === "xes" ? "imp.uploaded_xes" : "imp.uploaded",
-    { name: state.preview.original_filename, rows: fmtInt(state.preview.row_count), columns: state.preview.columns.length })));
+  clear(status, h("div", { class: "notice ok" }, isOcel()
+    ? t("imp.uploaded_ocel", { name: state.preview.original_filename, events: fmtInt(state.preview.conversion.counts.events),
+      objects: fmtInt(state.preview.conversion.counts.objects) })
+    : t(state.preview.source_format === "xes" ? "imp.uploaded_xes" : "imp.uploaded",
+      { name: state.preview.original_filename, rows: fmtInt(state.preview.row_count), columns: state.preview.columns.length })));
+  state.roles = {};
   renderPreview();
   goto(2);
 }
@@ -69,8 +80,40 @@ async function reconvertXes() {
   } catch (err) { toast(err.message, "error"); } finally { btn.disabled = false; }
 }
 
+function renderOcel(p) {
+  const c = p.conversion;
+  clear($("#ocel-summary"), h("dl", { class: "prov" },
+    h("dt", {}, t("ocel.unique_events")), h("dd", {}, fmtInt(c.counts.events)),
+    h("dt", {}, t("ocel.unique_objects")), h("dd", {}, fmtInt(c.counts.objects)),
+    h("dt", {}, t("ocel.e2o")), h("dd", {}, fmtInt(c.counts.e2o)),
+    h("dt", {}, t("ocel.o2o")), h("dd", {}, fmtInt(c.counts.o2o))),
+  table([
+    { key: "name", label: t("ocel.object_type") },
+    { key: "objects", label: t("ocel.objects"), num: true, render: (r) => fmtInt(r.objects) },
+    { key: "events", label: t("ocel.unique_events"), num: true, render: (r) => fmtInt(r.events) },
+  ], c.object_types));
+  clear($("#ocel-main"), c.object_types.map((o) => h("option", { value: o.name, selected: o.name === c.suggested_main_type }, o.name)));
+  clear($("#ocel-fields"), OCEL_FIELDS.map(([key, label]) => h("label", {}, h("span", {}, label),
+    h("select", { "data-ocel-field": key }, h("option", { value: "" }, t("imp.not_mapped")),
+      c.attribute_names.map((a) => h("option", { value: a, selected: c.suggested_fields[key] === a }, a))))));
+  clear($("#ocel-findings"), p.conversion_findings.length
+    ? findingsTable(p.conversion_findings.map((f) => ({ severity: f.severity, code: f.code, row: null, field: f.element,
+      case_id: null, value: null, message: f.message })))
+    : h("p", { class: "small muted" }, t("ocel.no_findings")));
+}
+
 function renderPreview() {
   const p = state.preview;
+  const ocel = isOcel();
+  $("#ocel-box").classList.toggle("hidden", !ocel);
+  $("#table-mapping").classList.toggle("hidden", ocel);
+  if (ocel) {
+    $("#xes-box").classList.add("hidden");
+    $("#csv-options").classList.add("hidden");
+    $("#file-info").textContent = t("imp.file_info_ocel", { name: p.original_filename, bytes: fmtInt(p.size_bytes) });
+    renderOcel(p);
+    return;
+  }
   renderXes(p);
   $("#file-info").textContent = t("imp.file_info", { name: p.original_filename, bytes: fmtInt(p.size_bytes), rows: fmtInt(p.row_count) });
   $("#encoding").value = p.encoding;
@@ -96,18 +139,49 @@ function renderPreview() {
 function mapping() {
   const m = {};
   for (const sel of $$("#mapping select")) m[sel.dataset.field] = sel.value || null;
-  m.attributes = $$("#attributes input:checked").map((i) => i.value);
+  m.case_object_type = $("#case-type").value.trim() || "case";
+  m.attributes = [];
+  m.case_attributes = [];
+  m.object_columns = [];
+  for (const row of $$("#column-roles [data-column]")) {
+    const col = row.dataset.column;
+    const role = row.querySelector("[data-role]").value;
+    if (role === "attribute") m.attributes.push(col);
+    else if (role === "case_attribute") m.case_attributes.push(col);
+    else if (role === "objects") {
+      m.object_columns.push({ column: col, object_type: row.querySelector("[data-otype]").value.trim() || col,
+        separator: row.querySelector("[data-sep]").value || null });
+    }
+  }
   return m;
 }
 
+function defaultRole(c) {
+  if ((state.preview.suggested_case_attributes || []).includes(c)) return "case_attribute";
+  if (state.preview.suggested_attributes.includes(c)) return "attribute";
+  return "ignore";
+}
+
+/** One row per column not mapped to a standard field: event attribute, case-object attribute, objects or ignore. */
 function renderAttributes() {
+  for (const row of $$("#column-roles [data-column]")) {  // keep choices across re-renders
+    state.roles[row.dataset.column] = { role: row.querySelector("[data-role]").value,
+      otype: row.querySelector("[data-otype]").value, sep: row.querySelector("[data-sep]").value };
+  }
   const used = new Set($$("#mapping select").map((s) => s.value).filter(Boolean));
-  const prev = new Set($$("#attributes input:checked").map((i) => i.value));
-  const first = !$$("#attributes input").length;
   const avail = state.preview.columns.filter((c) => !used.has(c));
-  clear($("#attributes"), avail.length ? avail.map((c) => h("label", { class: "chip" }, h("input", { type: "checkbox", value: c,
-    checked: first ? state.preview.suggested_attributes.includes(c) : prev.has(c) }), h("span", {}, c)))
-    : h("span", { class: "muted small" }, t("imp.all_mapped")));
+  if (!avail.length) return clear($("#column-roles"), h("span", { class: "muted small" }, t("imp.all_mapped")));
+  clear($("#column-roles"), h("div", { class: "role-grid" }, avail.map((c) => {
+    const prev = state.roles[c] || { role: defaultRole(c), otype: c.replace(/^.*:/, ""), sep: "" };
+    const otype = h("input", { "data-otype": "", value: prev.otype, maxlength: "255", "aria-label": t("imp.objects.type") });
+    const sep = h("input", { "data-sep": "", value: prev.sep, maxlength: "3", placeholder: t("imp.objects.no_sep"),
+      "aria-label": t("imp.objects.separator") });
+    const extra = h("span", { class: "role-extra" }, h("label", {}, t("imp.objects.type"), otype), h("label", {}, t("imp.objects.separator"), sep));
+    const role = h("select", { "data-role": "", "aria-label": c, onchange: () => extra.classList.toggle("hidden", role.value !== "objects") },
+      ROLES.map((r) => h("option", { value: r, selected: r === prev.role }, t(`imp.role.${r}`))));
+    extra.classList.toggle("hidden", prev.role !== "objects");
+    return h("div", { class: "role-row", "data-column": c }, h("code", {}, c), role, extra);
+  })));
 }
 
 function tsOptions() {
@@ -163,9 +237,7 @@ async function confirmImport() {
   const status = $("#import-status");
   const split = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
   const target = $("#target").value;
-  const body = {
-    ...importOptions(),
-    invalid_row_policy: $('input[name="policy"]:checked').value,
+  const common = {
     dataset_name: $("#ds-name").value.trim() || null,
     target_dataset_id: target ? Number(target) : null,
     display_timezone: $("#display-tz").value,
@@ -175,9 +247,14 @@ async function confirmImport() {
     },
     reference_time: $("#ref-time").value ? `${$("#ref-time").value}Z` : null,
   };
+  const fields = Object.fromEntries($$("[data-ocel-field]").map((s) => [s.dataset.ocelField, s.value || null]));
   $("#confirm").disabled = true;
   try {
-    const job = await api(`/api/uploads/${state.preview.upload_id}/import`, { method: "POST", body });
+    const job = isOcel()
+      ? await api(`/api/uploads/${state.preview.upload_id}/import-ocel`, { method: "POST",
+        body: { ...common, main_object_type: $("#ocel-main").value, fields } })
+      : await api(`/api/uploads/${state.preview.upload_id}/import`, { method: "POST",
+        body: { ...importOptions(), ...common, invalid_row_policy: $('input[name="policy"]:checked').value } });
     const done = await followJob(job.id, status);
     if (done.status === "succeeded") {
       await refreshDatasets();
@@ -233,6 +310,10 @@ $("#to-step-3").addEventListener("click", () => {
   goto(3);
 });
 $("#validate").addEventListener("click", validate);
+$("#ocel-next").addEventListener("click", () => {
+  if (!$("#ds-name").value) $("#ds-name").value = state.preview.original_filename.replace(/\.[^.]+$/, "");
+  goto(5);
+});
 $("#to-step-5").addEventListener("click", () => goto(5));
 $("#confirm").addEventListener("click", confirmImport);
 for (const b of $$("[data-back]")) b.addEventListener("click", () => goto(Number(b.dataset.back)));

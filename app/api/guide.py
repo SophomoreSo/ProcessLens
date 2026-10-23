@@ -7,13 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import build_view, filter_params, get_dataset
 from app.database import get_db
-from app.errors import AppError, not_found
-from app.models import Dataset, OcelLog
+from app.errors import AppError
+from app.models import Dataset
 from app.schemas.filters import FilterSpec
 from app.services import guide
 
 router = APIRouter(prefix="/api/guide", tags=["guided analysis"])
-RESERVED = {"question", "dataset_id", "ocel_log_id"} | set(FilterSpec.model_fields)
+RESERVED = {"question", "dataset_id"} | set(FilterSpec.model_fields)
 
 
 @router.get("/questions", summary="Questions, the data they need and their parameters")
@@ -30,20 +30,12 @@ def _error(exc: guide.GuideError) -> AppError:
 
 
 @router.get("/answer", summary="Answer one question (dataset questions honour the usual filter parameters)")
-def answer(request: Request, question: str = Query(...), dataset_id: int | None = None, ocel_log_id: int | None = None,
+def answer(request: Request, question: str = Query(...), dataset_id: int | None = None,
            spec: FilterSpec = Depends(filter_params), db: Session = Depends(get_db)):
     q = guide.BY_ID.get(question)
     if q is None:
         raise _error(guide.GuideError("guide.err.unknown_question", question=question))
     try:
-        if q.source == "ocel":
-            if ocel_log_id is None:
-                raise guide.GuideError("guide.err.needs_ocel")
-            ocel = db.get(OcelLog, ocel_log_id)
-            if ocel is None:
-                raise not_found("ocel_log")
-            # the lead object type (perspective) is the question's object type
-            return guide.answer(db, question, {**_params(request), "object_type": spec.object_type}, ocel=ocel)
         if dataset_id is None:
             raise guide.GuideError("guide.err.needs_dataset")
         ds: Dataset = get_dataset(dataset_id, db)

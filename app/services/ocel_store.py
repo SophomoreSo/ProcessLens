@@ -83,12 +83,15 @@ def _opt(values) -> list:
     return [None if v is None or (isinstance(v, float) and np.isnan(v)) else v for v in values]
 
 
-def from_case_table(norm: pd.DataFrame, object_type: str, attribute_columns: list[str]) -> OcelRows:
+def from_case_table(norm: pd.DataFrame, object_type: str, attribute_columns: list[str],
+                    case_attribute_columns: list[str] | None = None) -> OcelRows:
     """Rows of a validated one-row-per-event table (``validation.validate_table``) as OCEL.
 
     The case column becomes objects of ``object_type``; each row is one event related to its
-    case object. Mapped event ids are kept (rows without one get ``row-<source row>``); the case
-    status of a row becomes a ``status`` attribute value of the case object at that event."""
+    case object and to the objects of its object columns (qualifier = source column). Mapped
+    event ids are kept (rows without one get ``row-<source row>``). The case status and the case
+    attribute columns become attribute values of the case object at that event; a value is
+    recorded when it first appears or changes, so the object keeps an attribute history."""
     rows = OcelRows()
     n = len(norm)
     if not n:
@@ -107,18 +110,37 @@ def from_case_table(norm: pd.DataFrame, object_type: str, attribute_columns: lis
     cases = norm["case_id"].tolist()
     acts = norm["activity"].tolist()
     attrs = norm["attributes"].tolist()
+    related = norm["objects"].tolist() if "objects" in norm else [[] for _ in range(n)]
+    case_attrs = norm["case_attrs"].tolist() if "case_attrs" in norm else [None] * n
+    other_objects: dict[str, str] = {}
+    last_value: dict[tuple[str, str], str] = {}
     for i in range(n):
         rows.events.append({"event_id": ids[i], "event_type": acts[i], "ts": ts[i], "position": source_rows[i],
                             "attributes": attrs[i], "start_ts": start[i], "resource": resource[i],
                             "department": department[i], "cost": cost[i], "source_row": source_rows[i],
                             "id_generated": not mapped_ids[i]})
         rows.e2o.append({"event_id": ids[i], "object_id": cases[i], "qualifier": ""})
-        if status[i]:
+        for column, otype, oids in related[i] or []:
+            for oid in oids:
+                other_objects.setdefault(oid, otype)
+                rows.e2o.append({"event_id": ids[i], "object_id": oid, "qualifier": column})
+        if status[i]:  # every reported status is kept (completion uses the case's last one)
             rows.attrs.append({"object_id": cases[i], "name": STATUS_ATTRIBUTE, "value": str(status[i]),
                                "ts": ts[i], "event_id": ids[i]})
-    rows.objects = [{"object_id": c, "object_type": object_type} for c in dict.fromkeys(cases)]
+        for name, value in (case_attrs[i] or {}).items():
+            if last_value.get((cases[i], name)) != value:
+                last_value[(cases[i], name)] = value
+                rows.attrs.append({"object_id": cases[i], "name": name, "value": value, "ts": ts[i],
+                                   "event_id": ids[i]})
+    case_ids = list(dict.fromkeys(cases))
+    rows.objects = [{"object_id": c, "object_type": object_type} for c in case_ids]
+    seen = set(case_ids)
+    rows.objects += [{"object_id": o, "object_type": t} for o, t in other_objects.items() if o not in seen]
     rows.event_types = [{"name": a, "attributes": [{"name": c, "type": "string"} for c in attribute_columns]}
                         for a in sorted(set(acts))]
-    rows.object_types = [{"name": object_type,
-                          "attributes": [{"name": STATUS_ATTRIBUTE, "type": "string"}] if rows.attrs else []}]
+    case_attr_names = ([STATUS_ATTRIBUTE] if any(status) else []) + list(case_attribute_columns or [])
+    rows.object_types = [{"name": object_type, "attributes": [{"name": a, "type": "string"} for a in case_attr_names]}]
+    for otype in dict.fromkeys(other_objects.values()):
+        if otype != object_type:
+            rows.object_types.append({"name": otype, "attributes": []})
     return rows

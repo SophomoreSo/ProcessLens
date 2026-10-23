@@ -63,6 +63,13 @@ def status_counts(cases: pd.DataFrame) -> dict:
     return {k: int(vc.get(k, 0)) for k in ("completed", "incomplete", "unknown")}
 
 
+def _unique_event_cost(ev: pd.DataFrame) -> float:
+    """Total cost with every event counted once, however many objects of the lead type it relates to."""
+    if "ocel_event_id" in ev:
+        ev = ev.drop_duplicates("ocel_event_id")
+    return float(ev["cost"].sum())
+
+
 def overview(view: FilteredView) -> dict:
     def compute():
         cases, ev, log = view.cases, view.events, view.log
@@ -77,7 +84,10 @@ def overview(view: FilteredView) -> dict:
         top = variants(view, limit=5)["items"]
         return {
             "case_count": n_cases,
-            "event_count": int(len(ev)),
+            # unique events (an event shared by several objects of the lead type counts once) ...
+            "event_count": int(ev["ocel_event_id"].nunique()) if "ocel_event_id" in ev else int(len(ev)),
+            # ... and object-event rows (one per object of the lead type and event)
+            "object_event_count": int(len(ev)),
             "activity_count": int(ev["activity"].nunique()),
             "total_case_count": view.total_case_count,
             "status_counts": status_counts(cases),
@@ -102,7 +112,7 @@ def overview(view: FilteredView) -> dict:
             },
             "top_variants": top,
             "bottleneck_candidates": transitions(view, min_cases=BOTTLENECK_MIN_CASES, sort="median", limit=5),
-            "total_cost": float(ev["cost"].sum()) if log.has_cost else None,
+            "total_cost": _unique_event_cost(ev) if log.has_cost else None,
         }
 
     return _cached(view, "overview", compute)

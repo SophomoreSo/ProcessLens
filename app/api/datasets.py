@@ -20,7 +20,9 @@ from app.models import (
     ImportFinding,
     MiningArtifact,
     MiningRun,
+    OcelE2O,
     OcelLog,
+    OcelObject,
     QuarantinedRow,
     ReferenceModel,
     TaskLog,
@@ -42,14 +44,35 @@ def _dataset(db: Session, dataset_id: int) -> Dataset:
     return ds
 
 
+def _object_types(db: Session, ds: Dataset) -> list[dict]:
+    if not ds.ocel_log_id:
+        return []
+    objects = dict(db.execute(select(OcelObject.object_type, func.count()).where(OcelObject.log_id == ds.ocel_log_id)
+                              .group_by(OcelObject.object_type)).all())
+    events = dict(db.execute(
+        select(OcelObject.object_type, func.count(func.distinct(OcelE2O.event_id)))
+        .join(OcelE2O, (OcelE2O.log_id == OcelObject.log_id) & (OcelE2O.object_id == OcelObject.object_id))
+        .where(OcelObject.log_id == ds.ocel_log_id).group_by(OcelObject.object_type)).all())
+    ocel = db.get(OcelLog, ds.ocel_log_id)
+    names = [t["name"] for t in (ocel.object_types if ocel else [])] or sorted(objects)
+    return [{"name": n, "objects": int(objects.get(n, 0)), "events": int(events.get(n, 0))} for n in names]
+
+
+def _out(db: Session, ds: Dataset) -> DatasetOut:
+    out = DatasetOut.model_validate(ds)
+    out.object_type_settings = ds.object_type_settings or {}
+    out.object_types = _object_types(db, ds)
+    return out
+
+
 @router.get("", response_model=list[DatasetOut], summary="List datasets")
 def list_datasets(db: Session = Depends(get_db)):
-    return db.scalars(select(Dataset).order_by(Dataset.created_at.desc(), Dataset.id.desc())).all()
+    return [_out(db, ds) for ds in db.scalars(select(Dataset).order_by(Dataset.created_at.desc(), Dataset.id.desc()))]
 
 
-@router.get("/{dataset_id}", response_model=DatasetOut, summary="Dataset metadata")
+@router.get("/{dataset_id}", response_model=DatasetOut, summary="Dataset metadata (with its object types)")
 def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
-    return _dataset(db, dataset_id)
+    return _out(db, _dataset(db, dataset_id))
 
 
 @router.patch("/{dataset_id}", response_model=DatasetOut,
@@ -58,11 +81,52 @@ def update_dataset(dataset_id: int, body: DatasetUpdate, db: Session = Depends(g
     ds = _dataset(db, dataset_id)
     data = body.model_dump(exclude_unset=True)
     analysis_changed = False
+    types = [t["name"] for t in _object_types(db, ds)]
     for key in ("name", "description"):
         if key in data and data[key] is not None:
             setattr(ds, key, data[key])
-    for key in ("display_timezone", "completion_mode", "completion_activities", "completed_status_values",
-                "open_status_values"):
+    if body.main_object_type is not None and body.main_object_type != ds.main_object_type:
+        if body.main_object_type not in types:
+            raise AppError(422, "unknown_object_type", key="ocel.err.unknown_object_type", types=body.main_object_type)
+        # the settings stay with their object type when the main type changes
+        old_main = ds.main_object_type
+        settings = dict(ds.object_type_settings or {})
+        settings[old_main] = _type_settings_json(ds)
+        new = settings.pop(body.main_object_type, {})
+        ds.main_object_type = body.main_object_type
+        _apply_type_settings(ds, new)
+        ds.object_type_settings = settings
+        analysis_changed = True
+    if "display_timezone" in data and data["display_timezone"] is not None:
+        ds.display_timezone = data["display_timezone"]
+        analysis_changed = True
+    target = body.object_type or ds.main_object_type
+    if target not in types:
+        raise AppError(422, "unknown_object_type", key="ocel.err.unknown_object_type", types=target)
+    if target != ds.main_object_type:  # settings of another object type live in object_type_settings
+        settings = dict(ds.object_type_settings or {})
+        cur = dict(settings.get(target, {}))
+        for key in ("completion_mode", "completion_activities", "completed_status_values", "open_status_values"):
+            if key in data and data[key] is not None:
+                cur[key] = data[key]
+                analysis_changed = True
+        if body.clear_reference_time:
+            cur.pop("reference_time", None)
+            analysis_changed = True
+        elif "reference_time" in data and body.reference_time is not None:
+            ref = pd.Timestamp(body.reference_time)
+            cur["reference_time"] = (ref.tz_convert("UTC").tz_localize(None) if ref.tzinfo else ref).isoformat()
+            analysis_changed = True
+        _check_type_settings(cur.get("completion_mode", "none"), cur.get("completion_activities", []),
+                             cur.get("completed_status_values", []))
+        settings[target] = cur
+        ds.object_type_settings = settings
+        if analysis_changed:
+            ds.settings_revision += 1
+        db.commit()
+        cache.invalidate_dataset(ds.id)
+        return _out(db, ds)
+    for key in ("completion_mode", "completion_activities", "completed_status_values", "open_status_values"):
         if key in data and data[key] is not None:
             setattr(ds, key, data[key])
             analysis_changed = True
@@ -74,15 +138,33 @@ def update_dataset(dataset_id: int, body: DatasetUpdate, db: Session = Depends(g
         ref = ref.tz_convert("UTC").tz_localize(None) if ref.tzinfo else ref
         ds.reference_time = ref.to_pydatetime()
         analysis_changed = True
-    if ds.completion_mode == "end_activity" and not ds.completion_activities:
-        raise AppError(422, "invalid_settings", key="error.invalid_settings_end_activity")
-    if ds.completion_mode == "case_status" and not ds.completed_status_values:
-        raise AppError(422, "invalid_settings", key="error.invalid_settings_case_status")
+    _check_type_settings(ds.completion_mode, ds.completion_activities, ds.completed_status_values)
     if analysis_changed:
         ds.settings_revision += 1
     db.commit()
     cache.invalidate_dataset(ds.id)
-    return ds
+    return _out(db, ds)
+
+
+def _check_type_settings(mode: str, activities: list, done_values: list) -> None:
+    if mode == "end_activity" and not activities:
+        raise AppError(422, "invalid_settings", key="error.invalid_settings_end_activity")
+    if mode == "case_status" and not done_values:
+        raise AppError(422, "invalid_settings", key="error.invalid_settings_case_status")
+
+
+def _type_settings_json(ds: Dataset) -> dict:
+    return {"completion_mode": ds.completion_mode, "completion_activities": ds.completion_activities,
+            "completed_status_values": ds.completed_status_values, "open_status_values": ds.open_status_values,
+            **({"reference_time": ds.reference_time.isoformat()} if ds.reference_time else {})}
+
+
+def _apply_type_settings(ds: Dataset, s: dict) -> None:
+    ds.completion_mode = s.get("completion_mode", "none")
+    ds.completion_activities = s.get("completion_activities", [])
+    ds.completed_status_values = s.get("completed_status_values", [])
+    ds.open_status_values = s.get("open_status_values", [])
+    ds.reference_time = pd.Timestamp(s["reference_time"]).to_pydatetime() if s.get("reference_time") else None
 
 
 @router.delete("/{dataset_id}", status_code=204,

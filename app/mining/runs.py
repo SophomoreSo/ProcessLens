@@ -280,9 +280,9 @@ def create_test_sleep(db: Session, ds: Dataset, seconds: float, timeout_s: float
     return run
 
 
-def create_ocpn(db: Session, ocel_log, object_types: list[str] | None, raw_params: dict,
+def create_ocpn(db: Session, ds: Dataset, ocel_log, object_types: list[str] | None, raw_params: dict,
                 timeout_s: float | None = None, force: bool = False) -> tuple[MiningRun, bool]:
-    """Object-centric Petri net discovery on an OCEL log (optionally restricted to object types)."""
+    """Object-centric Petri net discovery on a dataset's objects (optionally restricted to object types)."""
     spec = registry.get("oc_petri_net")
     av = registry.availability(spec)
     if av["status"] != "available":
@@ -291,8 +291,9 @@ def create_ocpn(db: Session, ocel_log, object_types: list[str] | None, raw_param
         raise RunRequestError("ocel.err.empty_selection")
     params = registry.validate_params(spec, raw_params)
     request = {"ocel_version": ocel_log.version, "object_types": object_types, "ocel_sha256": ocel_log.source_sha256}
-    return _create(db, kind="ocpn", ds=None, view=None, algorithm_id=spec.id, params=params, request=request,
-                   key_inputs={"ocel_log_id": ocel_log.id, **request, "algorithm_id": spec.id, "params": params},
+    return _create(db, kind="ocpn", ds=ds, view=None, algorithm_id=spec.id, params=params, request=request,
+                   key_inputs={"dataset_id": ds.id, "dataset_version": ds.version, "ocel_log_id": ocel_log.id,
+                               **request, "algorithm_id": spec.id, "params": params},
                    timeout_s=_timeout(timeout_s), force=force, ocel_log_id=ocel_log.id)
 
 

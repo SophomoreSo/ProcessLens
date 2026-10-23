@@ -15,9 +15,10 @@
   <h2>1 · {{ t('imp.upload.title') }}</h2>
   <div class="dropzone" id="dropzone">
     <p><b>{{ t('imp.upload.drop') }}</b></p>
-    <input type="file" id="file-input" accept=".csv,.txt,.tsv,.xes,.gz,text/csv" aria-label="{{ t('imp.upload.choose') }}">
+    <input type="file" id="file-input" accept=".csv,.txt,.tsv,.xes,.gz,.json,.jsonocel,text/csv,application/json" aria-label="{{ t('imp.upload.choose') }}">
     <p class="small muted">{{ t('imp.upload.required') }}</p>
     <p class="small muted">{{ t('imp.upload.xes_note') }}</p>
+    <p class="small muted">{{ t('imp.upload.ocel_note') }}</p>
   </div>
   <p class="small muted">{{ t('imp.upload.no_file') }}
     <a href="/api/sample-data/p2p_demo_events.csv" download>{{ t('imp.upload.demo_log') }}</a> ·
@@ -28,6 +29,18 @@
 <section class="card hidden" data-panel="2">
   <div class="card-head"><h2>2 · {{ t('imp.step.mapping') }}</h2><span id="file-info" class="small muted"></span></div>
   <div id="column-warnings"></div>
+  <div id="ocel-box" class="hidden">
+    <h3>{{ t('imp.ocel.title') }}</h3>
+    <div id="ocel-summary" class="small"></div>
+    <div class="form-grid" style="margin-top:8px">
+      <label>{{ t('imp.ocel.main_type') }}<select id="ocel-main"></select></label>
+    </div>
+    <p class="small muted">{{ t('imp.ocel.main_type_help') }}</p>
+    <h3 style="margin-top:12px">{{ t('imp.ocel.fields') }}</h3>
+    <div class="mapping-grid" id="ocel-fields"></div>
+    <div id="ocel-findings" style="margin-top:8px"></div>
+    <div class="actions" style="margin-top:14px"><button type="button" class="btn btn-primary" id="ocel-next">{{ t('imp.next_confirm') }}</button></div>
+  </div>
   <div id="xes-box" class="hidden">
     <h3>{{ t('xes.title') }}</h3>
     <div id="xes-summary" class="small"></div>
@@ -47,13 +60,20 @@
       <option value="\t">{{ t('imp.delim.tab') }}</option><option value="|">{{ t('imp.delim.pipe') }} |</option></select></label>
     <div class="actions" style="align-self:end"><button type="button" class="btn" id="reparse">{{ t('imp.reread') }}</button></div>
   </div>
+  <div id="table-mapping">
   <h3 style="margin-top:14px">{{ t('imp.sample_rows') }}</h3>
   <div id="sample-table"></div>
   <h3 style="margin-top:14px">{{ t('imp.map_columns') }}</h3>
   <div class="mapping-grid" id="mapping"></div>
-  <h3 style="margin-top:14px">{{ t('imp.attributes') }}</h3>
-  <div class="chips" id="attributes"></div>
+  <h3 style="margin-top:14px">{{ t('imp.objects.title') }}</h3>
+  <p class="small muted">{{ t('imp.objects.intro') }}</p>
+  <div class="form-grid">
+    <label>{{ t('imp.objects.case_type') }}<input id="case-type" maxlength="255" value="case"></label>
+  </div>
+  <h3 style="margin-top:14px">{{ t('imp.objects.columns') }}</h3>
+  <div id="column-roles"></div>
   <div class="actions" style="margin-top:14px"><button type="button" class="btn btn-primary" id="to-step-3">{{ t('imp.next_timestamps') }}</button></div>
+  </div>
 </section>
 
 <section class="card hidden" data-panel="3">
@@ -95,7 +115,7 @@
     <label>{{ t('imp.target') }}<select id="target"><option value="">{{ t('imp.new_dataset') }}</option></select></label>
     <label>{{ t('imp.dataset_name') }}<input id="ds-name" maxlength="200"></label>
   </div>
-  <fieldset style="margin-top:12px"><legend>{{ t('imp.invalid_rows') }}</legend>
+  <fieldset style="margin-top:12px" id="policy-box"><legend>{{ t('imp.invalid_rows') }}</legend>
     <label class="inline"><input type="radio" name="policy" value="reject_import" checked> {{ t('imp.policy.reject') }}</label><br>
     <label class="inline"><input type="radio" name="policy" value="quarantine"> {{ t('imp.policy.quarantine') }}</label>
   </fieldset>

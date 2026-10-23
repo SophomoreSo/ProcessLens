@@ -382,3 +382,12 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 /* Guest (read-only) layout */
 .guest-banner { margin: 6px 10px 10px; display: grid; gap: 4px; }
 .guest-banner small { color: var(--text-muted); font-size: .75rem; line-height: 1.35; }
+
+/* Import wizard: column roles (object-centric mapping) */
+.role-grid { display: grid; gap: 6px; }
+.role-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.role-row code { min-width: 140px; font-weight: 600; overflow-wrap: anywhere; }
+.role-extra { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.role-extra label { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; }
+.role-extra input { width: 9rem; }
+.steps li.skipped { opacity: .45; text-decoration: line-through; }

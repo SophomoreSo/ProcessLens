@@ -31,8 +31,33 @@ def normalize_delimiter(v: str | None) -> str | None:
     return v
 
 
+class ObjectColumn(BaseModel):
+    """A column whose values identify further objects related to each row's event."""
+
+    column: str = Field(min_length=1)
+    object_type: str = Field(min_length=1, max_length=255)
+    separator: str | None = Field(None, max_length=3, description="Split multi-valued cells (e.g. ';'); none = one id")
+
+    @field_validator("object_type")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("object_type must not be blank")
+        return v
+
+    @field_validator("separator", mode="before")
+    @classmethod
+    def _blank(cls, v):
+        return None if isinstance(v, str) and v == "" else v
+
+
 class ColumnMapping(BaseModel):
-    """Maps source CSV columns onto the standard event schema."""
+    """Maps source columns onto the object-centric event schema.
+
+    Each row is one event. ``case_id`` identifies the event's object of the lead type
+    ``case_object_type``; ``object_columns`` relate the event to further objects;
+    ``case_attributes`` are attribute values of the case object (kept as its history)."""
 
     case_id: str
     activity: str
@@ -46,6 +71,9 @@ class ColumnMapping(BaseModel):
     attributes: list[str] = Field(default_factory=list, description="Extra scalar columns kept as event attributes")
     case_object_type: str | None = Field("case", max_length=255,
                                          description="Object type of the objects identified by the case column")
+    object_columns: list[ObjectColumn] = Field(default_factory=list)
+    case_attributes: list[str] = Field(default_factory=list,
+                                       description="Columns holding attributes of the case object (not of the event)")
 
     @field_validator("*", mode="before")
     @classmethod
@@ -64,7 +92,15 @@ class ColumnMapping(BaseModel):
         overlap = set(used) & set(self.attributes)
         if overlap:
             raise ValueError(f"Columns mapped to standard fields cannot also be attributes: {sorted(overlap)}")
+        roles = used + self.attributes + self.case_attributes + [o.column for o in self.object_columns]
+        twice = {c for c in roles if roles.count(c) > 1}
+        if twice:
+            raise ValueError(f"Each source column can have only one role: {sorted(twice)}")
         return self
+
+    def all_columns(self) -> list[str]:
+        return [*self.mapped_columns().values(), *self.attributes, *self.case_attributes,
+                *(o.column for o in self.object_columns)]
 
     def mapped_columns(self) -> dict[str, str]:
         return {f: getattr(self, f) for f in REQUIRED_FIELDS + OPTIONAL_FIELDS if getattr(self, f)}
@@ -155,6 +191,30 @@ class ConfirmImportRequest(ImportOptions):
         return validate_timezone(v) if v else v
 
 
+class OcelFieldMapping(BaseModel):
+    """Event attributes (by name) used as the standard fields of the analyses."""
+
+    resource: str | None = None
+    department: str | None = None
+    cost: str | None = None
+    start_timestamp: str | None = None
+
+
+class OcelImportRequest(BaseModel):
+    main_object_type: str = Field(min_length=1, max_length=255)
+    fields: OcelFieldMapping = Field(default_factory=OcelFieldMapping)
+    dataset_name: str | None = Field(None, max_length=200)
+    target_dataset_id: int | None = Field(None, description="Re-import into an existing dataset (creates a new version)")
+    display_timezone: str | None = None
+    completion: CompletionSettings = Field(default_factory=CompletionSettings)
+    reference_time: datetime | None = None
+
+    @field_validator("display_timezone")
+    @classmethod
+    def _dtz(cls, v):
+        return validate_timezone(v) if v else v
+
+
 class UploadPreview(BaseModel):
     upload_id: str
     original_filename: str
@@ -169,6 +229,7 @@ class UploadPreview(BaseModel):
     suggested_attributes: list[str]
     suggested_timestamp_format: str
     timestamp_format_candidates: list[dict]
+    suggested_case_attributes: list[str] = Field(default_factory=list)
     source_format: str = "csv"
     conversion: dict | None = Field(None, description="XES only: how the log was converted to rows")
     conversion_findings: list[dict] = Field(default_factory=list)

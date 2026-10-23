@@ -17,6 +17,7 @@ from app.schemas.imports import (
     ConfirmImportRequest,
     ImportOptions,
     JobOut,
+    OcelImportRequest,
     UploadPreview,
     ValidationSummary,
     normalize_delimiter,
@@ -83,6 +84,8 @@ def xes_options(upload_id: str, body: XesOptions, db: Session = Depends(get_db),
 def validate_upload(upload_id: str, options: ImportOptions, db: Session = Depends(get_db),
                     lang: str = Depends(request_lang)):
     up = _get_upload(db, upload_id)
+    if up.source_format == "ocel":
+        raise AppError(422, "ocel_upload", key="error.ocel_upload_use_import")
     try:
         result = importer.run_validation(up, options)
     except ValueError as exc:
@@ -122,14 +125,29 @@ def upload_validation_report(upload_id: str, format: str = Query("csv", pattern=
 def confirm_import(upload_id: str, request: ConfirmImportRequest, db: Session = Depends(get_db),
                    lang: str = Depends(request_lang)):
     up = _get_upload(db, upload_id)
-    missing = [c for c in list(request.mapping.mapped_columns().values()) + request.mapping.attributes
-               if c not in up.columns]
+    if up.source_format == "ocel":
+        raise AppError(422, "ocel_upload", key="error.ocel_upload_use_import")
+    missing = [c for c in request.mapping.all_columns() if c not in up.columns]
     if missing and not request.encoding and not request.delimiter:
         raise AppError(422, "invalid_mapping", ", ".join(sorted(set(missing))), key="error.mapped_columns_missing")
     try:
         job = importer.start_import(db, up, request)
     except LookupError:
         raise not_found("dataset") from None
+    return _job_out(job, lang)
+
+
+@router.post("/uploads/{upload_id}/import-ocel", response_model=JobOut, status_code=202,
+             summary="Import a staged OCEL 2.0 JSON upload (main object type and standard-field mapping)")
+def confirm_ocel_import(upload_id: str, request: OcelImportRequest, db: Session = Depends(get_db),
+                        lang: str = Depends(request_lang)):
+    up = _get_upload(db, upload_id)
+    try:
+        job = importer.start_ocel_import(db, up, request)
+    except LookupError:
+        raise not_found("dataset") from None
+    except importer.ImportRejected as exc:
+        raise AppError(422, "invalid_mapping", key=exc.key, **exc.params) from None
     return _job_out(job, lang)
 
 

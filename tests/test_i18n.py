@@ -188,7 +188,7 @@ def test_demo_uses_current_language(client):
     r = client.post("/api/demo/load")
     from app.services import jobs
     jobs.wait_for(r.json()["id"])
-    ds = client.get("/api/datasets").json()[0]
+    ds = next(d for d in client.get("/api/datasets").json() if d["source_filename"] == "p2p_demo_events.csv")
     assert ds["name"] == "데모: 구매-지급(합성)"
     rules = client.get(f"/api/datasets/{ds['id']}/conformance-rules").json()
     assert rules[0]["name"] == "구매 주문 승인 필수"

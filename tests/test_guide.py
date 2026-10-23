@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.services import jobs
+from tests.conftest import import_ocel
+
 FIXTURE_OCEL = Path(__file__).parent / "fixtures" / "ocel_small.json"
 
 
@@ -86,21 +89,22 @@ def test_department_differences(client, hand_dataset):
 
 
 def test_object_relationship_delays(client):
-    small = client.post("/api/ocel/upload", files={"file": ("s.json", FIXTURE_OCEL.read_bytes(), "application/json")}).json()
-    a = ask(client, "object_relationship_delays", ocel_log_id=small["id"], object_type="item").json()
+    small = import_ocel(client, FIXTURE_OCEL.read_bytes(), "item")["dataset_id"]
+    a = ask(client, "object_relationship_delays", dataset_id=small).json()
     assert a["status"] == "not_answerable"  # every item has exactly one order and one package
-    demo = client.post("/api/ocel/demo").json()
-    b = ask(client, "object_relationship_delays", ocel_log_id=demo["id"], object_type="order").json()
+    r = client.post("/api/demo/load")
+    jobs.wait_for(r.json()["id"])
+    demo = client.get(f"/api/jobs/{r.json()['id']}").json()["result"]["ocel_demo_dataset_id"]
+    b = ask(client, "object_relationship_delays", dataset_id=demo).json()  # main type: order
     assert b["status"] == "answered", b
-    assert b["provenance"]["ocel_version"] == 1 and b["provenance"]["sample"]["n"] == 60
+    assert b["provenance"]["object_type"] == "order" and b["provenance"]["sample"]["n"] == 60
     assert all(row["fewest_objects"] >= 3 and row["most_objects"] >= 3 for row in b["table"]["rows"])
-    assert ask(client, "object_relationship_delays", ocel_log_id=demo["id"], object_type="car").status_code == 422
+    assert ask(client, "object_relationship_delays", dataset_id=demo, object_type="car").status_code == 422
 
 
 def test_invalid_requests(client, hand_dataset):
     assert ask(client, "what_is_love", dataset_id=hand_dataset).status_code == 422
     assert ask(client, "rework_variants").status_code == 422  # needs a dataset
-    assert ask(client, "object_relationship_delays").status_code == 422  # needs an OCEL log
     assert ask(client, "longest_transitions", dataset_id=hand_dataset, statistic="mode").status_code == 422
     assert ask(client, "longest_transitions", dataset_id=hand_dataset, bogus=1).status_code == 422
     assert ask(client, "sla_violations", dataset_id=hand_dataset, max_hours=0).status_code == 422

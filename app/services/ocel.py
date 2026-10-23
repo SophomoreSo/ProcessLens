@@ -15,17 +15,15 @@ attributes such as cost are summed over unique events only.
 
 from __future__ import annotations
 
-import hashlib
-import io
 import json
-from collections import defaultdict
-import math
 import logging
+import math
+from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import delete, insert, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import OcelE2O, OcelEvent, OcelLog, OcelO2O, OcelObject, OcelObjectAttribute
@@ -267,43 +265,6 @@ def _naive_utc(ts: pd.Timestamp):
     return ts.tz_convert("UTC").tz_localize(None).to_pydatetime()
 
 
-def store(db: Session, parsed: Parsed, name: str, filename: str, raw: bytes, description: str | None = None,
-          is_demo: bool = False) -> OcelLog:
-    counts = {
-        "events": len(parsed.events), "objects": len(parsed.objects), "e2o": len(parsed.e2o), "o2o": len(parsed.o2o),
-        "event_types": len(parsed.event_types), "object_types": len(parsed.object_types),
-        "object_attribute_values": len(parsed.object_attrs),
-    }
-    ocel = OcelLog(name=name, description=description, is_demo=is_demo, source_filename=filename,
-                   source_sha256=hashlib.sha256(raw).hexdigest(), source_size_bytes=len(raw),
-                   event_types=parsed.event_types, object_types=parsed.object_types, counts=counts,
-                   findings=parsed.findings)
-    db.add(ocel)
-    db.flush()
-    chunk = 5000
-
-    def bulk(model, rows):
-        for i in range(0, len(rows), chunk):
-            db.execute(insert(model), rows[i:i + chunk])
-
-    bulk(OcelEvent, [{"log_id": ocel.id, **{**e, "ts": _naive_utc(e["ts"])}} for e in parsed.events])
-    bulk(OcelObject, [{"log_id": ocel.id, **o} for o in parsed.objects])
-    bulk(OcelObjectAttribute, [{"log_id": ocel.id, **{**a, "ts": _naive_utc(a["ts"])}} for a in parsed.object_attrs])
-    bulk(OcelE2O, [{"log_id": ocel.id, **r} for r in parsed.e2o])
-    bulk(OcelO2O, [{"log_id": ocel.id, **r} for r in parsed.o2o])
-    db.commit()
-    log.info("Imported OCEL %s: %s", ocel.id, counts)
-    return ocel
-
-
-def delete_log(db: Session, ocel: OcelLog) -> None:
-    for model in (OcelE2O, OcelO2O, OcelObjectAttribute, OcelObject, OcelEvent):
-        db.execute(delete(model).where(model.log_id == ocel.id))
-    db.delete(ocel)
-    db.commit()
-    cache.invalidate_dataset(("ocel", ocel.id))
-
-
 def _chunks(ids: list, size: int = 900):
     for i in range(0, len(ids), size):
         yield ids[i:i + size]
@@ -343,8 +304,8 @@ class OcelData:
 def load(db: Session, ocel: OcelLog) -> OcelData:
     def compute() -> OcelData:
         ev = pd.DataFrame(db.execute(select(OcelEvent.event_id, OcelEvent.event_type, OcelEvent.ts, OcelEvent.position,
-                                            OcelEvent.attributes).where(OcelEvent.log_id == ocel.id)).all(),
-                          columns=["event_id", "event_type", "ts", "position", "attributes"])
+                                            OcelEvent.attributes, OcelEvent.cost).where(OcelEvent.log_id == ocel.id)).all(),
+                          columns=["event_id", "event_type", "ts", "position", "attributes", "cost"])
         ev["ts"] = pd.to_datetime(ev["ts"]).dt.tz_localize("UTC")
         ev = ev.sort_values(["ts", "position"], kind="mergesort").reset_index(drop=True)
         ob = pd.DataFrame(db.execute(select(OcelObject.object_id, OcelObject.object_type).where(OcelObject.log_id == ocel.id)).all(),
@@ -374,6 +335,13 @@ def _restrict(data: OcelData, types: list[str] | None) -> tuple[pd.DataFrame, pd
     rel = data.e2o[data.e2o["object_type"].isin(types)]
     ev = data.events[data.events["event_id"].isin(set(rel["event_id"]))]
     return ev, ob, rel
+
+
+def _cost_total(ev: pd.DataFrame) -> float | None:
+    """Sum of event costs over unique events: the cost field, else a numeric ``cost`` attribute."""
+    if "cost" in ev and ev["cost"].notna().any():
+        return round(math.fsum(float(v) for v in ev["cost"].dropna()), 9)
+    return _numeric_attribute_total(ev, "cost")
 
 
 def _numeric_attribute_total(ev: pd.DataFrame, name: str) -> float | None:
@@ -417,7 +385,7 @@ def stats(data: OcelData, types: list[str] | None = None) -> dict:
         "event_types": sorted(per_event_type, key=lambda r: -r["unique_events"]),
         "o2o_qualifiers": [{"source_type": s, "target_type": t, "qualifier": q, "count": int(c)}
                            for (s, t, q), c in o2o.groupby(["source_type", "target_type", "qualifier"]).size().items()],
-        "cost_total_unique_events": _numeric_attribute_total(ev, "cost"),
+        "cost_total_unique_events": _cost_total(ev),
         "time_range": [ev["ts"].min().isoformat(), ev["ts"].max().isoformat()] if len(ev) else None,
     }
 
@@ -455,6 +423,26 @@ def ocdfg(data: OcelData, types: list[str] | None = None) -> dict:
             "nodes": sorted(nodes, key=lambda n: -n["unique_events"]),
             "edges": sorted(edges, key=lambda e: (e["object_type"], -e["object_transitions"])),
             "start": starts, "end": ends, "unique_events": int(len(ev))}
+
+
+def type_graph(data: OcelData) -> dict:
+    """Object types (nodes) and how their objects are related (edges): events shared by objects of
+    two types, distinct object pairs in such events, and object-to-object relationships."""
+    ob, rel, o2o = data.objects, data.e2o, data.o2o
+    nodes = [{"object_type": t, "objects": int(len(g)),
+              "unique_events": int(rel[rel["object_type"] == t]["event_id"].nunique())}
+             for t, g in ob.groupby("object_type")]
+    pairs = rel[["event_id", "object_id", "object_type"]].drop_duplicates()
+    joined = pairs.merge(pairs, on="event_id", suffixes=("_a", "_b"))
+    joined = joined[joined["object_type_a"] < joined["object_type_b"]]
+    edges = []
+    for (ta, tb), g in joined.groupby(["object_type_a", "object_type_b"]):
+        edges.append({"source": ta, "target": tb, "shared_events": int(g["event_id"].nunique()),
+                      "object_pairs": int(g[["object_id_a", "object_id_b"]].drop_duplicates().shape[0])})
+    o2o_edges = [{"source": s_, "target": t_, "qualifier": q, "relationships": int(c)}
+                 for (s_, t_, q), c in o2o.groupby(["source_type", "target_type", "qualifier"]).size().items()]
+    return {"type": "object_type_graph", "nodes": sorted(nodes, key=lambda n: -n["objects"]),
+            "edges": sorted(edges, key=lambda e: -e["shared_events"]), "o2o": o2o_edges}
 
 
 def object_detail(data: OcelData, db: Session, ocel: OcelLog, object_id: str) -> dict | None:
@@ -512,31 +500,6 @@ def objects_page(data: OcelData, object_type: str | None, search: str | None, pa
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-def projection_csv(data: OcelData, object_type: str) -> tuple[bytes, dict]:
-    """Flatten to a case-centric CSV by one object type (each object becomes a case).
-
-    Events related to several objects of the type are copied into each of their
-    cases; ``ocel_event_id`` and ``objects_sharing_event`` keep that visible.
-    Event costs are deliberately not mapped to the cost field (they would be
-    counted once per copy)."""
-    rel = data.e2o[data.e2o["object_type"] == object_type].sort_values(["object_id", "ts", "position"], kind="mergesort")
-    if rel.empty:
-        raise ValueError("no events for this object type")
-    sharing = rel.groupby("event_id")["object_id"].nunique()
-    out = pd.DataFrame({
-        "case_id": rel["object_id"].to_numpy(), "activity": rel["event_type"].to_numpy(),
-        "timestamp": rel["ts"].dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ").to_numpy(),
-        "ocel_event_id": rel["event_id"].to_numpy(), "qualifier": rel["qualifier"].to_numpy(),
-        "objects_sharing_event": rel["event_id"].map(sharing).to_numpy(),
-    })
-    buf = io.StringIO()
-    out.to_csv(buf, index=False)
-    info = {"object_type": object_type, "cases": int(rel["object_id"].nunique()), "rows": int(len(rel)),
-            "unique_events": int(rel["event_id"].nunique()),
-            "duplicated_event_rows": int(len(rel) - rel["event_id"].nunique())}
-    return buf.getvalue().encode("utf-8"), info
-
-
 def relationship_delays(data: OcelData, object_type: str) -> dict:
     """Lifetime of objects of a type grouped by how many related objects of each other type they have.
 
@@ -578,7 +541,7 @@ def ocpn_payload(data: OcelData, types: list[str] | None) -> dict:
             "relations": rel[["event_id", "object_id", "qualifier", "object_type", "event_type", "ts"]].copy()}
 
 
-def exec_ocpn(db: Session, run, call) -> dict:
+def exec_ocpn(db: Session, run, call) -> dict:  # run kind "ocpn" (app/mining/runs.py)
     from app.mining.runs import _store_artifact
     from app.mining.worker import TaskFailed
 

@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from app.config import PROJECT_ROOT
 from app.i18n import t
 from app.models import AlertRule, ConformanceRule, Dataset, ImportJob
-from app.schemas.imports import ColumnMapping, CompletionSettings, ConfirmImportRequest, TimestampOptions
+from app.schemas.imports import (
+    ColumnMapping,
+    CompletionSettings,
+    ConfirmImportRequest,
+    ObjectColumn,
+    OcelImportRequest,
+    OcelFieldMapping,
+    TimestampOptions,
+)
 from app.services import importer
 
 DEMO_FILES = {
@@ -23,7 +31,9 @@ def demo_request(lang: str = "en") -> ConfirmImportRequest:
         mapping=ColumnMapping(
             case_id="case_id", activity="activity", timestamp="timestamp", event_id="event_id",
             start_timestamp="start_timestamp", resource="resource", department="department", cost="cost",
-            case_status="case_status", attributes=["vendor", "po_amount", "category"],
+            case_status="case_status", case_object_type="purchase order",
+            object_columns=[ObjectColumn(column="vendor", object_type="vendor")],
+            case_attributes=["po_amount", "category"],
         ),
         timestamps=TimestampOptions(format="%Y-%m-%d %H:%M:%S", source_timezone="Europe/Berlin"),
         invalid_row_policy="reject_import",
@@ -40,6 +50,24 @@ def start_demo_import(db: Session, lang: str = "en") -> ImportJob:
     upload, _ = importer.create_upload_from_path(db, path, "p2p_demo_events.csv")
     return importer.start_import(db, upload, demo_request(lang), kind="demo",
                                  extra={"demo": True, "lang": lang, "description": t(lang, "demo.description")})
+
+
+OCEL_DEMO = "ocel_demo.json"
+
+
+def create_ocel_demo(db: Session, job_id: str, lang: str = "en") -> Dataset | None:
+    """Second demo dataset: the synthetic order-to-delivery OCEL log (once)."""
+    from app.services.importer import _persist_ocel
+
+    if db.scalar(select(func.count()).select_from(Dataset).where(Dataset.is_demo.is_(True),
+                                                                 Dataset.source_filename == OCEL_DEMO)):
+        return None
+    upload, _ = importer.create_upload_from_path(db, PROJECT_ROOT / "sample_data" / OCEL_DEMO, OCEL_DEMO)
+    request = OcelImportRequest(main_object_type="order", fields=OcelFieldMapping(cost="cost"),
+                                dataset_name=t(lang, "ocel.demo_name"))
+    ds = _persist_ocel(db, job_id, upload, request, True, t(lang, "ocel.demo_description"))
+    db.commit()
+    return ds
 
 
 def create_demo_rules(db: Session, ds: Dataset, lang: str = "en") -> None:
