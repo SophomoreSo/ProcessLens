@@ -29,6 +29,7 @@ class MiningRun(Base):
     ocel_log_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     dataset_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     settings_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    object_type: Mapped[str | None] = mapped_column(String(255), nullable=True)  # lead object type of the run
     filter_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     split: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     algorithm_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -75,6 +76,7 @@ class ReferenceModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     dataset_id: Mapped[int] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(200))
+    object_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_type: Mapped[str] = mapped_column(String(40))  # petri_net | process_tree | declare | log_skeleton | temporal_profile
     representation: Mapped[dict] = mapped_column(JSON)
     pnml: Mapped[str | None] = mapped_column(Text, nullable=True)  # Petri net used for replay/alignments

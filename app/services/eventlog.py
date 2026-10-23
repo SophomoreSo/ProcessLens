@@ -1,6 +1,12 @@
-"""Loading a persisted dataset into an analysis-ready, cached event log.
+"""Loading a dataset into an analysis-ready, cached event log for one object type.
 
-Definitions implemented here (see docs/METRICS.md):
+Datasets are object-centric (OCEL tables). An ``EventLog`` is the view of a
+dataset through a *lead object type*: every object of that type plays the role
+of a case, and its events are the events related to it. An event related to
+several objects of the type therefore appears once per object (``ocel_event_id``
+keeps its identity); unique-event counts and costs are computed separately.
+
+Definitions implemented here (see docs/METRICS.md), with "case" = object of the lead type:
 
 * Events within a case are ordered by (timestamp, source row). ``seq`` is that
   position. Equal timestamps are ordered by source row only.
@@ -30,8 +36,9 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Dataset, Event
+from app.models import Dataset, OcelE2O, OcelEvent, OcelObject, OcelObjectAttribute
 from app.services.cache import cache
+from app.services.ocel_store import STATUS_ATTRIBUTE
 
 VARIANT_SEP = " → "
 
@@ -53,36 +60,121 @@ class EventLog:
     has_department: bool
     has_cost: bool
     has_case_status: bool
+    object_type: str = "case"
 
     @property
     def key(self) -> tuple:
-        return (self.dataset_id, self.version, self.settings_revision)
+        return (self.dataset_id, self.version, self.settings_revision, self.object_type)
 
 
 def variant_id_for(activities: tuple[str, ...]) -> str:
     return hashlib.sha1("\x1f".join(activities).encode("utf-8")).hexdigest()[:12]
 
 
-def _load_events(db: Session, dataset_id: int) -> pd.DataFrame:
+@dataclass(frozen=True)
+class TypeSettings:
+    """Analysis settings of one object type (the shape ``build_event_log`` reads)."""
+
+    id: int
+    version: int
+    settings_revision: int
+    display_timezone: str
+    completion_mode: str
+    completion_activities: list
+    completed_status_values: list
+    open_status_values: list
+    reference_time: object  # naive UTC datetime or None
+
+
+def settings_for(ds: Dataset, object_type: str) -> TypeSettings:
+    if object_type == ds.main_object_type:
+        src = {"completion_mode": ds.completion_mode, "completion_activities": ds.completion_activities,
+               "completed_status_values": ds.completed_status_values, "open_status_values": ds.open_status_values,
+               "reference_time": ds.reference_time}
+    else:
+        raw = (ds.object_type_settings or {}).get(object_type, {})
+        ref = raw.get("reference_time")
+        src = {"completion_mode": raw.get("completion_mode", "none"),
+               "completion_activities": raw.get("completion_activities", []),
+               "completed_status_values": raw.get("completed_status_values", []),
+               "open_status_values": raw.get("open_status_values", []),
+               "reference_time": pd.Timestamp(ref).tz_localize(None).to_pydatetime() if ref else None}
+    return TypeSettings(id=ds.id, version=ds.version, settings_revision=ds.settings_revision,
+                        display_timezone=ds.display_timezone or "UTC", **src)
+
+
+EVENT_COLUMNS = ["case_id", "activity", "ts", "start_ts", "resource", "department", "cost", "case_status",
+                 "event_id", "source_row", "seq", "ocel_event_id"]
+
+
+def _load_events(db: Session, log_id: int, object_type: str) -> pd.DataFrame:
+    """Events of every object of ``object_type``, one row per (object, event)."""
     stmt = (
-        select(Event.case_id, Event.activity, Event.ts, Event.start_ts, Event.resource, Event.department,
-               Event.cost, Event.case_status, Event.event_id, Event.source_row, Event.seq)
-        .where(Event.dataset_id == dataset_id)
+        select(OcelE2O.object_id, OcelEvent.event_type, OcelEvent.ts, OcelEvent.start_ts, OcelEvent.resource,
+               OcelEvent.department, OcelEvent.cost, OcelEvent.event_id, OcelEvent.id_generated,
+               OcelEvent.source_row, OcelEvent.position)
+        .join(OcelObject, (OcelObject.log_id == OcelE2O.log_id) & (OcelObject.object_id == OcelE2O.object_id))
+        .join(OcelEvent, (OcelEvent.log_id == OcelE2O.log_id) & (OcelEvent.event_id == OcelE2O.event_id))
+        .where(OcelE2O.log_id == log_id, OcelObject.object_type == object_type)
     )
-    rows = db.execute(stmt).all()
-    cols = ["case_id", "activity", "ts", "start_ts", "resource", "department", "cost", "case_status",
-            "event_id", "source_row", "seq"]
-    df = pd.DataFrame.from_records(rows, columns=cols)
-    df["ts"] = pd.to_datetime(df["ts"]).dt.as_unit("us").dt.tz_localize("UTC")
-    df["start_ts"] = pd.to_datetime(df["start_ts"]).dt.as_unit("us").dt.tz_localize("UTC")
-    df["cost"] = pd.to_numeric(df["cost"], errors="coerce").astype("float64")
-    for c in ("case_id", "activity"):
-        df[c] = df[c].astype(str)
-    df = df.sort_values(["case_id", "seq"], kind="mergesort").reset_index(drop=True)
-    return df
+    raw = pd.DataFrame.from_records(db.execute(stmt).all(), columns=[
+        "case_id", "activity", "ts", "start_ts", "resource", "department", "cost", "ocel_event_id", "id_generated",
+        "source_row", "position"])
+    # an event related to the same object twice (different qualifiers) is still one event of that object
+    raw = raw.drop_duplicates(["case_id", "ocel_event_id"])
+    raw["ts"] = pd.to_datetime(raw["ts"]).dt.as_unit("us").dt.tz_localize("UTC")
+    raw["start_ts"] = pd.to_datetime(raw["start_ts"]).dt.as_unit("us").dt.tz_localize("UTC")
+    raw["cost"] = pd.to_numeric(raw["cost"], errors="coerce").astype("float64")
+    for c in ("case_id", "activity", "ocel_event_id"):
+        raw[c] = raw[c].astype(str)
+    raw["source_row"] = raw["source_row"].where(raw["source_row"].notna(), raw["position"] + 1).astype("int64")
+    raw = raw.sort_values(["case_id", "ts", "position"], kind="mergesort").reset_index(drop=True)
+    raw["seq"] = raw.groupby("case_id", sort=False).cumcount().astype("int64")
+    raw["event_id"] = raw["ocel_event_id"].where(~raw["id_generated"].astype(bool), None)
+    raw["case_status"] = _status_per_row(db, log_id, object_type, raw)
+    return raw[EVENT_COLUMNS]
 
 
-def build_event_log(dataset: Dataset, events: pd.DataFrame) -> EventLog:
+def _status_per_row(db: Session, log_id: int, object_type: str, ev: pd.DataFrame) -> pd.Series:
+    """The object's ``status`` attribute values placed on its event rows.
+
+    A value reported by an event row (CSV/XES import) goes to that row; a value without a
+    reporting event (OCEL attribute history) goes to the object's last event at or before its
+    time (else its first event). The completion rule "case status" uses the last value."""
+    out = pd.Series([None] * len(ev), index=ev.index, dtype=object)
+    stmt = (select(OcelObjectAttribute.object_id, OcelObjectAttribute.value, OcelObjectAttribute.ts,
+                   OcelObjectAttribute.event_id, OcelObjectAttribute.id)
+            .join(OcelObject, (OcelObject.log_id == OcelObjectAttribute.log_id)
+                  & (OcelObject.object_id == OcelObjectAttribute.object_id))
+            .where(OcelObjectAttribute.log_id == log_id, OcelObjectAttribute.name == STATUS_ATTRIBUTE,
+                   OcelObject.object_type == object_type)
+            .order_by(OcelObjectAttribute.ts, OcelObjectAttribute.id))
+    attrs = pd.DataFrame.from_records(db.execute(stmt).all(), columns=["case_id", "value", "ts", "event_id", "id"])
+    if attrs.empty or ev.empty:
+        return out
+    attrs = attrs[attrs["value"].notna() & (attrs["value"] != "")]
+    linked = attrs[attrs["event_id"].notna()].astype({"case_id": str, "event_id": str})
+    if not linked.empty:
+        hit = linked.merge(ev[["case_id", "ocel_event_id"]].reset_index(),
+                           left_on=["case_id", "event_id"], right_on=["case_id", "ocel_event_id"])
+        hit = hit.drop_duplicates("index", keep="last")  # attrs are ordered by time, then insertion
+        out.iloc[hit["index"].to_numpy()] = hit["value"].to_numpy()
+    free = attrs[attrs["event_id"].isna()].copy()
+    if not free.empty:
+        free["case_id"] = free["case_id"].astype(str)
+        free["ts"] = pd.to_datetime(free["ts"]).dt.as_unit("us").dt.tz_localize("UTC")
+        free = free.sort_values(["ts", "id"], kind="mergesort")
+        rows = ev[["case_id", "ts"]].reset_index().sort_values("ts", kind="mergesort")
+        hit = pd.merge_asof(free, rows, on="ts", by="case_id", direction="backward")
+        first = rows.groupby("case_id")["index"].min()
+        hit["index"] = hit["index"].fillna(hit["case_id"].map(first))
+        for idx, value in zip(hit["index"], hit["value"]):  # later values overwrite earlier ones
+            if pd.notna(idx):
+                out.iloc[int(idx)] = value
+    return out
+
+
+def build_event_log(dataset: Dataset | TypeSettings, events: pd.DataFrame, object_type: str = "case") -> EventLog:
     ev = events
     n = len(ev)
     same_case_prev = np.zeros(n, dtype=bool)
@@ -158,9 +250,14 @@ def build_event_log(dataset: Dataset, events: pd.DataFrame) -> EventLog:
         has_department=bool(ev["department"].notna().any()) if n else False,
         has_cost=bool(ev["cost"].notna().any()) if n else False,
         has_case_status=bool(ev["case_status"].notna().any()) if n else False,
+        object_type=object_type,
     )
 
 
-def get_event_log(db: Session, dataset: Dataset) -> EventLog:
-    key = (dataset.id, dataset.version, dataset.settings_revision, "eventlog")
-    return cache.get_or_compute(key, lambda: build_event_log(dataset, _load_events(db, dataset.id)))
+def get_event_log(db: Session, dataset: Dataset, object_type: str | None = None) -> EventLog:
+    """The dataset seen through ``object_type`` (default: the dataset's main object type)."""
+    ot = object_type or dataset.main_object_type
+    key = (dataset.id, dataset.version, dataset.settings_revision, "eventlog", ot)
+    return cache.get_or_compute(key, lambda: build_event_log(
+        settings_for(dataset, ot), _load_events(db, dataset.ocel_log_id, ot) if dataset.ocel_log_id
+        else pd.DataFrame(columns=EVENT_COLUMNS), ot))

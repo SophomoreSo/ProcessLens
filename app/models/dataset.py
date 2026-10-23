@@ -1,9 +1,11 @@
 """Persistence models for uploads, datasets, events, findings and import jobs.
 
-All timestamps are stored as naive UTC ``DateTime`` values. The schema is
-case-centric: every event belongs to exactly one case. Object-centric event
-logs (many-to-many event/object relations) are a roadmap item and would be
-added as separate tables rather than by overloading ``case_id``.
+All timestamps are stored as naive UTC ``DateTime`` values. A dataset is
+object-centric: its events, objects and relationships live in the OCEL tables
+(app/models/ocel.py, linked by ``Dataset.ocel_log_id``). Analyses look at it
+through a lead object type, whose objects play the role of cases. The
+``Event`` model below maps the pre-0007 case-centric table (renamed
+``legacy_events``); it is kept only for the upgrade and is no longer written.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
@@ -85,6 +87,14 @@ class Dataset(Base):
     error_count: Mapped[int] = mapped_column(Integer, default=0)
     warning_count: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Object-centric data (OCEL tables) and the object type analyses start from.
+    ocel_log_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    main_object_type: Mapped[str] = mapped_column(String(255), default="case", server_default="case")
+    # Analysis settings of object types other than the main one:
+    # {type: {completion_mode, completion_activities, completed_status_values, open_status_values,
+    #         reference_time (ISO, UTC)}}. The columns below hold the main type's settings.
+    object_type_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+
     # Analysis settings
     display_timezone: Mapped[str] = mapped_column(String(64), default="UTC")
     completion_mode: Mapped[str] = mapped_column(String(20), default="none")
@@ -94,13 +104,12 @@ class Dataset(Base):
     reference_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attribute_columns: Mapped[list] = mapped_column(JSON, default=list)
 
-    events: Mapped[list[Event]] = relationship(
-        back_populates="dataset", cascade="all, delete-orphan", passive_deletes=True
-    )
 
 
 class Event(Base):
-    __tablename__ = "events"
+    """Pre-0007 case-centric events (read only by the upgrade; see module docstring)."""
+
+    __tablename__ = "legacy_events"
     __table_args__ = (
         Index("ix_events_dataset_case", "dataset_id", "case_id"),
         Index("ix_events_dataset_activity", "dataset_id", "activity"),
@@ -121,8 +130,6 @@ class Event(Base):
     cost: Mapped[float | None] = mapped_column(Float, nullable=True)
     case_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
     attributes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
-    dataset: Mapped[Dataset] = relationship(back_populates="events")
 
 
 class ImportFinding(Base):

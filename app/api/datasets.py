@@ -17,15 +17,16 @@ from app.models import (
     AlertRule,
     ConformanceRule,
     Dataset,
-    Event,
     ImportFinding,
     MiningArtifact,
     MiningRun,
+    OcelLog,
     QuarantinedRow,
     ReferenceModel,
     TaskLog,
 )
 from app.schemas.datasets import DatasetOut, DatasetUpdate, FindingOut
+from app.services import ocel_store
 from app.services.cache import cache
 from app.services.exports import to_csv, to_json
 from app.services.importer import delete_upload_file_if_unused
@@ -92,13 +93,17 @@ def delete_dataset(dataset_id: int, confirm_name: str = Query(..., description="
     if confirm_name != ds.name:
         raise AppError(422, "confirmation_mismatch")
     upload_id = ds.upload_id
-    run_ids = select(MiningRun.id).where(MiningRun.dataset_id == ds.id)
+    run_ids = select(MiningRun.id).where((MiningRun.dataset_id == ds.id) | (
+        (MiningRun.ocel_log_id == ds.ocel_log_id) if ds.ocel_log_id else False))
     db.execute(delete(MiningArtifact).where(MiningArtifact.run_id.in_(run_ids)))
-    db.execute(delete(MiningRun).where(MiningRun.dataset_id == ds.id))
+    db.execute(delete(MiningRun).where(MiningRun.id.in_(db.scalars(run_ids).all())))
     db.execute(delete(ReferenceModel).where(ReferenceModel.dataset_id == ds.id))
     db.execute(update(TaskLog).where(TaskLog.linked_dataset_id == ds.id).values(linked_dataset_id=None))
-    for model in (Alert, AlertRule, ConformanceRule, Event, ImportFinding, QuarantinedRow):
+    for model in (Alert, AlertRule, ConformanceRule, ImportFinding, QuarantinedRow):
         db.execute(delete(model).where(model.dataset_id == ds.id))
+    if ds.ocel_log_id:
+        ocel_store.clear(db, ds.ocel_log_id)
+        db.execute(delete(OcelLog).where(OcelLog.id == ds.ocel_log_id))
     db.delete(ds)
     db.flush()
     delete_upload_file_if_unused(db, upload_id)

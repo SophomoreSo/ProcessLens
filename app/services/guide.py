@@ -120,6 +120,8 @@ def validate_params(q: Question, raw: dict) -> dict:
 def _query(ds: Dataset, view: FilteredView, **extra) -> str:
     """Query string that reopens a page on the same dataset and filters."""
     params = [("dataset", ds.id)]
+    if view.log.object_type != ds.main_object_type:
+        params.append(("object_type", view.log.object_type))
     for k, v in view.spec.normalized().items():
         if k in extra:
             continue
@@ -131,7 +133,8 @@ def _query(ds: Dataset, view: FilteredView, **extra) -> str:
 
 def _dataset_provenance(ds: Dataset, view: FilteredView, n: int, n_label_key: str) -> dict:
     return {"source": "dataset", "dataset_id": ds.id, "dataset_name": ds.name, "dataset_version": ds.version,
-            "settings_revision": ds.settings_revision, "filters": view.spec.normalized(),
+            "settings_revision": ds.settings_revision, "object_type": view.log.object_type,
+            "filters": view.spec.normalized(),
             "population": {"cases": view.case_count, "total_cases": view.total_case_count},
             "sample": {"n": int(n), "label_key": n_label_key}}
 
@@ -208,10 +211,11 @@ def rework_variants(q: Question, p: dict, ds: Dataset, view: FilteredView) -> di
         caveats=["guide.c.rework_definition"])
 
 
-def _default_sla(db: Session, ds: Dataset) -> tuple[float | None, str | None]:
-    rule = db.scalars(select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id,
-                                                    ConformanceRule.rule_type == "max_duration")
-                      .order_by(ConformanceRule.id)).first()
+def _default_sla(db: Session, ds: Dataset, object_type: str) -> tuple[float | None, str | None]:
+    rules = db.scalars(select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id,
+                                                     ConformanceRule.rule_type == "max_duration")
+                       .order_by(ConformanceRule.id)).all()
+    rule = next((r for r in rules if (r.object_type or ds.main_object_type) == object_type), None)
     if rule is None:
         return None, None
     return float(rule.params["max_hours"]), rule.params.get("metric", "completed_throughput")
@@ -220,7 +224,7 @@ def _default_sla(db: Session, ds: Dataset) -> tuple[float | None, str | None]:
 def sla_violations(q: Question, p: dict, ds: Dataset, view: FilteredView, db: Session) -> dict:
     source_key = "guide.sla_from_param"
     if p["max_hours"] is None:
-        hours, metric = _default_sla(db, ds)
+        hours, metric = _default_sla(db, ds, view.log.object_type)
         if hours is None:
             prov = _dataset_provenance(ds, view, 0, "guide.n.cases")
             return _answer(q, p, prov, status="not_answerable", reason_key="guide.r.no_sla",

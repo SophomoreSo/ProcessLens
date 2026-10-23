@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import SessionLocal
-from app.models import Dataset, Event, ImportFinding, ImportJob, QuarantinedRow, Upload
+from app.models import Dataset, ImportFinding, ImportJob, OcelLog, QuarantinedRow, Upload
 from app.models.dataset import utcnow
 from app.schemas.imports import ConfirmImportRequest, ImportOptions
-from app.services import jobs, xes
+from app.services import jobs, ocel_store, xes
 from app.services.cache import cache
 from app.services.ingestion import (
     IngestionError,
@@ -183,34 +183,6 @@ def start_import(db: Session, upload: Upload, request: ConfirmImportRequest, kin
     return job
 
 
-def _naive_utc(series: pd.Series) -> list:
-    s = series.dt.tz_convert("UTC").dt.tz_localize(None)
-    return [None if pd.isna(v) else v.to_pydatetime() for v in s]
-
-
-def _optional_values(series: pd.Series) -> list:
-    return [None if v is None or (isinstance(v, float) and np.isnan(v)) else v for v in series.tolist()]
-
-
-def _event_records(dataset_id: int, norm: pd.DataFrame) -> list[dict]:
-    cols = {
-        "source_row": norm["source_row"].astype(int).tolist(),
-        "seq": norm["seq"].astype(int).tolist(),
-        "case_id": norm["case_id"].tolist(),
-        "activity": norm["activity"].tolist(),
-        "ts": _naive_utc(norm["ts"]),
-        "start_ts": _naive_utc(norm["start_ts"]),
-        "event_id": _optional_values(norm["event_id"]),
-        "resource": _optional_values(norm["resource"]),
-        "department": _optional_values(norm["department"]),
-        "cost": [None if (v is None or np.isnan(v)) else float(v) for v in norm["cost"].tolist()],
-        "case_status": _optional_values(norm["case_status"]),
-        "attributes": norm["attributes"].tolist(),
-    }
-    n = len(norm)
-    return [{"dataset_id": dataset_id, **{k: v[i] for k, v in cols.items()}} for i in range(n)]
-
-
 def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportRequest,
              result: ValidationResult, is_demo: bool, description: str | None) -> Dataset:
     norm = result.normalized
@@ -218,7 +190,8 @@ def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportReq
         ds = db.get(Dataset, request.target_dataset_id)
         if ds is None:
             raise ImportRejected("import.target_deleted")
-        db.execute(delete(Event).where(Event.dataset_id == ds.id))
+        if ds.ocel_log_id:
+            ocel_store.clear(db, ds.ocel_log_id)
         db.execute(delete(ImportFinding).where(ImportFinding.dataset_id == ds.id))
         db.execute(delete(QuarantinedRow).where(QuarantinedRow.dataset_id == ds.id))
         ds.version += 1
@@ -257,14 +230,27 @@ def _persist(db: Session, job_id: str, upload: Upload, request: ConfirmImportReq
         ref = pd.Timestamp(ref).tz_convert("UTC").tz_localize(None).to_pydatetime()
     ds.reference_time = ref
     ds.attribute_columns = request.mapping.attributes
+    ds.main_object_type = request.mapping.case_object_type
+    ds.object_type_settings = {}
     db.flush()
 
-    records = _event_records(ds.id, norm)
-    total = max(len(records), 1)
-    for i in range(0, len(records), INSERT_CHUNK):
-        db.execute(insert(Event), records[i:i + INSERT_CHUNK])
-        jobs.set_progress(job_id, 0.35 + 0.5 * min(i + INSERT_CHUNK, total) / total, "job.stage.writing",
-                          done=f"{min(i + INSERT_CHUNK, total):,}", total=f"{total:,}")
+    rows = ocel_store.from_case_table(norm, ds.main_object_type, request.mapping.attributes)
+    ocel = db.get(OcelLog, ds.ocel_log_id) if ds.ocel_log_id else None
+    if ocel is None:
+        ocel = OcelLog(name=ds.name, source_filename="", source_sha256="", source_size_bytes=0,
+                       event_types=[], object_types=[], counts={}, findings=[])
+        db.add(ocel)
+        db.flush()
+        ds.ocel_log_id = ocel.id
+    ocel.name, ocel.description, ocel.is_demo, ocel.version = ds.name, ds.description, ds.is_demo, ds.version
+    ocel.source_filename, ocel.source_sha256 = ds.source_filename, ds.source_sha256
+    ocel.source_size_bytes, ocel.display_timezone, ocel.imported_at = ds.source_size_bytes, ds.display_timezone, ds.imported_at
+    ocel_store.apply_metadata(ocel, rows)
+
+    def progress(done: int, total: int) -> None:
+        jobs.set_progress(job_id, 0.35 + 0.5 * done / total, "job.stage.writing", done=f"{done:,}", total=f"{total:,}")
+
+    ocel_store.write(db, ocel.id, rows, progress)
 
     finding_rows = [{"dataset_id": ds.id, "dataset_version": ds.version, **f} for f in result.findings]
     for i in range(0, len(finding_rows), INSERT_CHUNK):

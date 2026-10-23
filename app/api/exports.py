@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import build_view, filter_params, get_dataset, request_lang
 from app.database import get_db
 from app.errors import AppError, not_found
-from app.models import Alert, AlertRule, ConformanceRule, Dataset, Event
+from app.models import Alert, AlertRule, ConformanceRule, Dataset
 from app.schemas.filters import FilterSpec
 from app.services import analytics
 from app.i18n import render
 from app.services.conformance import evaluate_rule, explain
+from app.services.ocel import event_attributes
 from app.services.exports import EVENT_EXPORT_COLUMNS, events_for_export, to_csv, to_json, write_xes
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/exports", tags=["exports"])
@@ -33,7 +34,7 @@ def _download(body: str, fmt: str, name: str) -> Response:
 
 def _meta(ds: Dataset, view, kind: str) -> dict:
     return {"export": kind, "dataset_id": ds.id, "dataset_name": ds.name, "dataset_version": ds.version,
-            "is_synthetic_demo": ds.is_demo, "filters": view.spec.normalized(),
+            "is_synthetic_demo": ds.is_demo, "object_type": view.log.object_type, "filters": view.spec.normalized(),
             "case_count": view.case_count, "generated_at": datetime.now(timezone.utc).isoformat(),
             "timestamps": "UTC (ISO 8601)", "durations": "seconds"}
 
@@ -69,9 +70,7 @@ def export(kind: str = Path(..., pattern="^(cases|events|variants|transitions|su
         rows = analytics.case_rows(view, 1, max(view.case_count, 1), "start", "asc")["items"]
         columns = CASE_COLUMNS
     elif kind == "events":
-        attrs = {(c, s): a for c, s, a in db.execute(
-            select(Event.case_id, Event.seq, Event.attributes).where(Event.dataset_id == ds.id,
-                                                                     Event.attributes.is_not(None)))}
+        attrs = event_attributes(db, ds.ocel_log_id, view.events["ocel_event_id"].tolist())
         rows = events_for_export(view.events, attrs)
         extra = sorted({k for r in rows for k in r if k.startswith("attr:")})
         columns = EVENT_EXPORT_COLUMNS + extra

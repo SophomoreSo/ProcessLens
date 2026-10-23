@@ -20,6 +20,7 @@ class ConformanceRule(Base):
     name: Mapped[str] = mapped_column(String(200))
     rule_type: Mapped[str] = mapped_column(String(40))
     params: Mapped[dict] = mapped_column(JSON)
+    object_type: Mapped[str | None] = mapped_column(String(255), nullable=True)  # None = the dataset's main type
     enabled: Mapped[bool] = mapped_column(default=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -35,6 +36,7 @@ class AlertRule(Base):
     name: Mapped[str] = mapped_column(String(200))
     alert_type: Mapped[str] = mapped_column(String(40))
     params: Mapped[dict] = mapped_column(JSON)
+    object_type: Mapped[str | None] = mapped_column(String(255), nullable=True)  # None = the dataset's main type
     severity: Mapped[str] = mapped_column(String(10), default="medium")
     enabled: Mapped[bool] = mapped_column(default=True)
     conformance_rule_id: Mapped[int | None] = mapped_column(

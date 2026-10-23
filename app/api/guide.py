@@ -42,7 +42,8 @@ def answer(request: Request, question: str = Query(...), dataset_id: int | None 
             ocel = db.get(OcelLog, ocel_log_id)
             if ocel is None:
                 raise not_found("ocel_log")
-            return guide.answer(db, question, _params(request), ocel=ocel)
+            # the lead object type (perspective) is the question's object type
+            return guide.answer(db, question, {**_params(request), "object_type": spec.object_type}, ocel=ocel)
         if dataset_id is None:
             raise guide.GuideError("guide.err.needs_dataset")
         ds: Dataset = get_dataset(dataset_id, db)

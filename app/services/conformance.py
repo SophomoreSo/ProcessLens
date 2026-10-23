@@ -188,13 +188,16 @@ def evaluate_rule(log: EventLog, rule: ConformanceRule) -> pd.DataFrame:
     return cache.get_or_compute(key, lambda: evaluate(log, rule.rule_type, rule.params))
 
 
-def lookup_factory(log: EventLog, get_rule: Callable[[int], ConformanceRule | None]):
-    """Build the ConformanceLookup used by filtering."""
+def lookup_factory(log: EventLog, get_rule: Callable[[int], ConformanceRule | None], main_type: str | None = None):
+    """Build the ConformanceLookup used by filtering (rules apply to one object type)."""
 
     def lookup(rule_id: int):
         rule = get_rule(rule_id)
         if rule is None:
             raise LookupError(f"Conformance rule {rule_id} not found for this dataset")
+        rtype = rule.object_type or main_type or log.object_type
+        if rtype != log.object_type:
+            raise LookupError(f"Conformance rule {rule_id} applies to object type '{rtype}', not '{log.object_type}'")
         return rule.revision, evaluate_rule(log, rule)["result"]
 
     return lookup

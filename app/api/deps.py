@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.errors import AppError, not_found
-from app.models import ConformanceRule, Dataset
+from app.models import ConformanceRule, Dataset, OcelLog
 from app.schemas.filters import FilterSpec
 from app.services.conformance import lookup_factory
 from app.services.eventlog import EventLog, get_event_log
@@ -49,6 +49,8 @@ def filter_params(
     conformance_result: list[str] = Query(default=[], description="compliant / violating / not_evaluable"),
     transition_from: str | None = Query(None, description="Directly-follows source (or __start__)"),
     transition_to: str | None = Query(None, description="Directly-follows target (or __end__)"),
+    object_type: str | None = Query(None, description="Lead object type: its objects are the cases of the analysis "
+                                                      "(default: the dataset's main object type)"),
 ) -> FilterSpec:
     try:
         return FilterSpec(
@@ -56,6 +58,7 @@ def filter_params(
             resource=resource, department=department, variant=variant, min_duration_h=min_duration_h,
             max_duration_h=max_duration_h, rework=rework, status=status, conformance_rule=conformance_rule,
             conformance_result=conformance_result, transition_from=transition_from, transition_to=transition_to,
+            object_type=object_type or None,
         )
     except ValidationError as exc:
         msgs = [e["msg"] for e in exc.errors()]
@@ -70,10 +73,33 @@ def rule_getter(db: Session, dataset_id: int):
     return get
 
 
+def dataset_object_types(db: Session, ds: Dataset) -> list[str]:
+    ocel = db.get(OcelLog, ds.ocel_log_id) if ds.ocel_log_id else None
+    return [t["name"] for t in (ocel.object_types if ocel else [])]
+
+
+def lead_type(db: Session, ds: Dataset, object_type: str | None) -> str:
+    """Validated lead object type (default: the dataset's main type)."""
+    ot = object_type or ds.main_object_type
+    types = dataset_object_types(db, ds)
+    if types and ot not in types:
+        raise AppError(422, "unknown_object_type", key="ocel.err.unknown_object_type", types=ot)
+    return ot
+
+
+def rule_type(ds: Dataset, rule) -> str:
+    return rule.object_type or ds.main_object_type
+
+
+def rule_log(db: Session, ds: Dataset, rule) -> EventLog:
+    """The event log of the object type a conformance rule applies to."""
+    return get_event_log(db, ds, rule_type(ds, rule))
+
+
 def build_view(db: Session, ds: Dataset, spec: FilterSpec) -> tuple[EventLog, FilteredView]:
-    log = get_event_log(db, ds)
+    log = get_event_log(db, ds, lead_type(db, ds, spec.object_type))
     try:
-        view = apply_filters(log, spec, lookup_factory(log, rule_getter(db, ds.id)))
+        view = apply_filters(log, spec, lookup_factory(log, rule_getter(db, ds.id), ds.main_object_type))
     except LookupError as exc:
         raise AppError(422, "invalid_filter", str(exc)) from None
     return log, view

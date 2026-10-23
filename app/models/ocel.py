@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -46,7 +46,13 @@ class OcelEvent(Base):
     ts: Mapped[datetime] = mapped_column(DateTime)  # UTC
     position: Mapped[int] = mapped_column(Integer)  # order in the source file (tie-breaker)
     attributes: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
+    # Standard event fields used by the analyses (exported as org:resource, org:group, cost:total ...).
+    start_ts: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # UTC
+    resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-based CSV row
+    id_generated: Mapped[bool] = mapped_column(default=False, server_default="0")  # no event id in the source
 
 class OcelObject(Base):
     __tablename__ = "ocel_objects"
@@ -70,6 +76,8 @@ class OcelObjectAttribute(Base):
     name: Mapped[str] = mapped_column(String(255))
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     ts: Mapped[datetime] = mapped_column(DateTime)
+    # Event whose source row reported this value (CSV/XES imports), if any.
+    event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class OcelE2O(Base):

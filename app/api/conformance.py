@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import build_view, filter_params, get_dataset, request_lang
+from app.api.deps import build_view, filter_params, get_dataset, lead_type, request_lang, rule_type
 from app.database import get_db
 from app.errors import not_found
 from app.models import Alert, AlertRule, ConformanceRule, Dataset
@@ -13,7 +13,6 @@ from app.schemas.filters import FilterSpec
 from app.schemas.rules import ConformanceRuleIn, ConformanceRuleOut
 from app.i18n import t
 from app.services.conformance import describe_rule, evaluate_rule, explain, summarize
-from app.services.eventlog import get_event_log
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}/conformance-rules", tags=["conformance"])
 
@@ -41,7 +40,9 @@ def list_rules(ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db)
 @router.post("", response_model=ConformanceRuleOut, status_code=201, summary="Create a conformance rule")
 def create_rule(body: ConformanceRuleIn, ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db),
                 lang: str = Depends(request_lang)):
-    rule = ConformanceRule(dataset_id=ds.id, **body.model_dump())
+    data = body.model_dump()
+    data["object_type"] = lead_type(db, ds, body.object_type)
+    rule = ConformanceRule(dataset_id=ds.id, **data)
     db.add(rule)
     db.commit()
     return _out(rule, lang)
@@ -57,7 +58,9 @@ def get_rule(rule_id: int, ds: Dataset = Depends(get_dataset), db: Session = Dep
 def update_rule(rule_id: int, body: ConformanceRuleIn, ds: Dataset = Depends(get_dataset),
                 db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     rule = _rule(db, ds, rule_id)
-    for k, v in body.model_dump().items():
+    data = body.model_dump()
+    data["object_type"] = lead_type(db, ds, body.object_type or rule.object_type)
+    for k, v in data.items():
         setattr(rule, k, v)
     rule.revision += 1  # new revision => fresh cached evaluation
     db.commit()
@@ -83,8 +86,9 @@ def evaluation(rule_id: int, ds: Dataset = Depends(get_dataset), spec: FilterSpe
                page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=500),
                db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     rule = _rule(db, ds, rule_id)
-    _, view = build_view(db, ds, spec)
-    res = evaluate_rule(get_event_log(db, ds), rule).reindex(view.cases.index)
+    # a rule is evaluated over the objects of its own type, whatever the page's lead type
+    log, view = build_view(db, ds, spec.model_copy(update={"object_type": rule_type(ds, rule)}))
+    res = evaluate_rule(log, rule).reindex(view.cases.index)
     summary = summarize(res, view.cases.index)
     listed = res[res["result"].isin(result)] if result else res
     order = {"violating": 0, "not_evaluable": 1, "compliant": 2}
@@ -94,7 +98,7 @@ def evaluation(rule_id: int, ds: Dataset = Depends(get_dataset), spec: FilterSpe
     items = [{"case_id": cid, "result": r["result"], "explanation": explain(r, lang),
               "status": view.cases.at[cid, "status"]} for cid, r in chunk.iterrows()]
     return {"dataset_id": ds.id, "dataset_version": ds.version, "filters": spec.normalized(),
-            "rule": _out(rule, lang).model_dump(mode="json"), "summary": summary,
+            "object_type": log.object_type, "rule": _out(rule, lang).model_dump(mode="json"), "summary": summary,
             "cases": {"items": items, "total": total, "page": page, "page_size": page_size},
             "notes": [t(lang, "note.conf.rule_based"), t(lang, "note.conf.not_evaluable")]}
 
@@ -109,9 +113,9 @@ def all_rules_summary(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Dep
     out = []
     for rule in db.scalars(select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id)
                            .order_by(ConformanceRule.id)):
-        entry = {"rule": _out(rule, lang).model_dump(mode="json")}
-        if rule.enabled:
+        entry = {"rule": _out(rule, lang).model_dump(mode="json"), "applies": rule_type(ds, rule) == log.object_type}
+        if rule.enabled and entry["applies"]:
             entry.update(summarize(evaluate_rule(log, rule), view.cases.index))
         out.append(entry)
-    return {"dataset_id": ds.id, "filters": spec.normalized(), "population_case_count": view.case_count,
-            "rules": out}
+    return {"dataset_id": ds.id, "filters": spec.normalized(), "object_type": log.object_type,
+            "population_case_count": view.case_count, "rules": out}

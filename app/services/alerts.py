@@ -69,7 +69,6 @@ def matching_cases(db: Session, log: EventLog, rule: AlertRule) -> dict[str, tup
 
 
 def evaluate_alert_rules(db: Session, dataset: Dataset, rule_ids: list[int] | None = None) -> dict:
-    log = get_event_log(db, dataset)
     q = select(AlertRule).where(AlertRule.dataset_id == dataset.id, AlertRule.enabled.is_(True))
     if rule_ids:
         q = q.where(AlertRule.id.in_(rule_ids))
@@ -77,6 +76,8 @@ def evaluate_alert_rules(db: Session, dataset: Dataset, rule_ids: list[int] | No
     now = utcnow()
     created = updated = gone = 0
     for rule in rules:
+        # each rule watches the objects of its own object type
+        log = get_event_log(db, dataset, rule.object_type or dataset.main_object_type)
         matches = matching_cases(db, log, rule)
         existing = {a.case_id: a for a in db.scalars(select(Alert).where(Alert.alert_rule_id == rule.id))}
         for cid, (key, params) in matches.items():

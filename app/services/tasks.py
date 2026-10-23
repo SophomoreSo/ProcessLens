@@ -25,7 +25,7 @@ import pandas as pd
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from app.models import Dataset, Event, TaskEvent, TaskLog
+from app.models import Dataset, OcelObject, TaskEvent, TaskLog
 from app.services.cache import cache
 
 log = logging.getLogger("processlens.tasks")
@@ -417,11 +417,14 @@ def business_cases(db: Session, tl: TaskLog, s: Sessionization, dataset_id: int 
                    page_size: int = 50) -> dict:
     df = _sessions(db, tl, s)
     linked = df.dropna(subset=["business_case_id"])
-    known: set[str] | None = None
+    known: dict[str, str] | None = None  # object id -> object type
     ds = db.get(Dataset, dataset_id) if dataset_id else None
     if ds is not None:
-        ids = set(linked["business_case_id"].unique())
-        known = set(db.scalars(select(Event.case_id).where(Event.dataset_id == ds.id, Event.case_id.in_(ids)).distinct()).all()) if ids else set()
+        ids = sorted(set(linked["business_case_id"].unique()))
+        known = {}
+        for i in range(0, len(ids), 900):  # matched against objects of every type
+            known.update(dict(db.execute(select(OcelObject.object_id, OcelObject.object_type).where(
+                OcelObject.log_id == ds.ocel_log_id, OcelObject.object_id.in_(ids[i:i + 900]))).all()))
     rows = []
     for cid, g in linked.groupby("business_case_id"):
         d = g["duration_s"].dropna()
@@ -430,7 +433,8 @@ def business_cases(db: Session, tl: TaskLog, s: Sessionization, dataset_id: int 
                      "first": g["ts"].min().isoformat(), "last": g["ts"].max().isoformat(),
                      "explicit_duration_s": float(d.sum()) if len(d) else None,
                      "events_with_duration": int(len(d)),
-                     "in_dataset": None if known is None else cid in known})
+                     "in_dataset": None if known is None else cid in known,
+                     "object_type": None if known is None else known.get(cid)})
     rows.sort(key=lambda r: (-r["events"], r["business_case_id"]))
     total = len(rows)
     return {"dataset_id": ds.id if ds else None, "dataset_name": ds.name if ds else None,

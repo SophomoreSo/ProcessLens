@@ -64,18 +64,19 @@ def to_json(payload) -> str:
 
 EVENT_EXPORT_COLUMNS = ["case_id", "seq", "activity", "timestamp_utc", "start_timestamp_utc", "resource",
                         "department", "cost", "case_status", "event_id", "source_row",
-                        "elapsed_since_previous_event_s"]
+                        "elapsed_since_previous_event_s", "ocel_event_id"]
 
 
 def _iso_or_none(v) -> str | None:
     return None if v is None or pd.isna(v) else pd.Timestamp(v).isoformat()
 
 
-def events_for_export(events: pd.DataFrame, attributes: dict[tuple[str, int], dict] | None = None) -> list[dict]:
-    """Rows for an events export; ``attributes`` maps (case_id, seq) -> extra attributes."""
+def events_for_export(events: pd.DataFrame, attributes: dict[str, dict] | None = None) -> list[dict]:
+    """Rows for an events export (one per object of the lead type and event);
+    ``attributes`` maps the OCEL event id -> extra attributes."""
     out = []
     cols = ["case_id", "seq", "activity", "ts", "start_ts", "resource", "department", "cost", "case_status",
-            "event_id", "source_row", "elapsed_s"]
+            "event_id", "source_row", "elapsed_s", "ocel_event_id"]
     for rec in events[cols].to_dict(orient="records"):
         row = {
             "case_id": rec["case_id"], "seq": int(rec["seq"]), "activity": rec["activity"],
@@ -84,9 +85,10 @@ def events_for_export(events: pd.DataFrame, attributes: dict[tuple[str, int], di
             "cost": None if pd.isna(rec["cost"]) else float(rec["cost"]),
             "case_status": rec["case_status"], "event_id": rec["event_id"], "source_row": int(rec["source_row"]),
             "elapsed_since_previous_event_s": None if pd.isna(rec["elapsed_s"]) else float(rec["elapsed_s"]),
+            "ocel_event_id": rec["ocel_event_id"],
         }
         if attributes is not None:
-            for k, v in (attributes.get((rec["case_id"], int(rec["seq"]))) or {}).items():
+            for k, v in (attributes.get(rec["ocel_event_id"]) or {}).items():
                 row[f"attr:{k}"] = v
         out.append(row)
     return out

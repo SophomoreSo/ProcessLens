@@ -6,22 +6,31 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import build_view, filter_params, get_dataset, request_lang, rule_getter
+from app.api.deps import build_view, filter_params, get_dataset, request_lang, rule_getter, rule_type
 from app.database import get_db
 from app.errors import AppError, not_found
-from app.models import ConformanceRule, Dataset, Event
+from app.models import ConformanceRule, Dataset
 from app.schemas.filters import FilterSpec
 from app.services import analytics
 from app.services.conformance import describe_rule, evaluate_rule, explain, lookup_factory
 from app.services.filtering import intersect
+from app.services.ocel import event_attributes, event_objects
 
 router = APIRouter(prefix="/api/datasets/{dataset_id}", tags=["analytics"])
+
+
+def _v(x):
+    """JSON-safe scalar from a DataFrame cell (NaN/NA -> None)."""
+    if x is None or (not isinstance(x, str) and pd.isna(x)):
+        return None
+    return float(x) if isinstance(x, float) else x
 
 
 def _envelope(ds: Dataset, view, data: dict | list) -> dict:
     return {
         "dataset_id": ds.id,
         "dataset_version": ds.version,
+        "object_type": view.log.object_type,
         "filters": view.spec.normalized(),
         "population": {"case_count": view.case_count, "total_case_count": view.total_case_count},
         "display_timezone": ds.display_timezone,
@@ -86,29 +95,31 @@ def cases(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_
     return _envelope(ds, view, analytics.case_rows(view, page, page_size, sort, order))
 
 
-@router.get("/cases/{case_id:path}", summary="Case detail: full event timeline and conformance findings")
-def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db),
-                lang: str = Depends(request_lang)):
-    log, _ = build_view(db, ds, FilterSpec())
+@router.get("/cases/{case_id:path}", summary="Case (object of the lead type) detail: timeline and conformance findings")
+def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
+                db: Session = Depends(get_db), lang: str = Depends(request_lang)):
+    log, _ = build_view(db, ds, FilterSpec(object_type=spec.object_type))
     if case_id not in log.cases.index:
         raise not_found("case")
     rec = log.cases.loc[case_id].to_dict()
     rec["case_id"] = case_id
     summary = analytics.case_summary(rec, log.variants["label"])
-    rows = db.scalars(select(Event).where(Event.dataset_id == ds.id, Event.case_id == case_id)
-                      .order_by(Event.seq)).all()
+    rows = log.events[log.events["case_id"] == case_id]
+    attrs = event_attributes(db, ds.ocel_log_id, rows["ocel_event_id"].tolist())
+    others = event_objects(db, ds.ocel_log_id, rows["ocel_event_id"].tolist(), exclude=case_id)
     events, prev = [], None
-    for e in rows:
-        ts = pd.Timestamp(e.ts).tz_localize("UTC")
-        start = pd.Timestamp(e.start_ts).tz_localize("UTC") if e.start_ts else None
+    for e in rows.itertuples():
+        ts = e.ts
+        start = e.start_ts if not pd.isna(e.start_ts) else None
         events.append({
-            "seq": e.seq, "activity": e.activity, "timestamp": ts.isoformat(),
+            "seq": int(e.seq), "activity": e.activity, "timestamp": ts.isoformat(),
             "start_timestamp": start.isoformat() if start is not None else None,
             "execution_s": (ts - start).total_seconds() if start is not None else None,
             "elapsed_since_previous_s": (ts - prev).total_seconds() if prev is not None else None,
-            "resource": e.resource, "department": e.department, "cost": e.cost, "case_status": e.case_status,
-            "event_id": e.event_id, "source_row": e.source_row, "attributes": e.attributes or {},
-            "tied_timestamp": False,
+            "resource": _v(e.resource), "department": _v(e.department), "cost": _v(e.cost),
+            "case_status": _v(e.case_status), "event_id": _v(e.event_id), "ocel_event_id": e.ocel_event_id,
+            "source_row": int(e.source_row), "attributes": attrs.get(e.ocel_event_id) or {},
+            "other_objects": others.get(e.ocel_event_id, []), "tied_timestamp": False,
         })
         prev = ts
     for i in range(1, len(events)):
@@ -117,12 +128,14 @@ def case_detail(case_id: str, ds: Dataset = Depends(get_dataset), db: Session = 
     conformance = []
     for rule in db.scalars(select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id,
                                                          ConformanceRule.enabled.is_(True)).order_by(ConformanceRule.id)):
+        if rule_type(ds, rule) != log.object_type:
+            continue
         res = evaluate_rule(log, rule).loc[case_id]
         conformance.append({"rule_id": rule.id, "rule_name": rule.name,
                             "rule": describe_rule(rule.rule_type, rule.params, lang),
                             "result": res["result"], "explanation": explain(res, lang)})
     return {"dataset_id": ds.id, "dataset_version": ds.version, "display_timezone": ds.display_timezone,
-            "case": summary, "events": events, "conformance": conformance,
+            "object_type": log.object_type, "case": summary, "events": events, "conformance": conformance,
             "has_timestamp_ties": any(e["tied_timestamp"] for e in events)}
 
 
@@ -144,7 +157,7 @@ class CohortRequest(BaseModel):
 def compare(body: CohortRequest, ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
             db: Session = Depends(get_db), lang: str = Depends(request_lang)):
     log, base = build_view(db, ds, spec)
-    lookup = lookup_factory(log, rule_getter(db, ds.id))
+    lookup = lookup_factory(log, rule_getter(db, ds.id), ds.main_object_type)
     try:
         a = intersect(base, body.a, lookup)
         b = intersect(base, body.b, lookup)

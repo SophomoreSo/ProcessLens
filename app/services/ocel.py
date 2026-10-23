@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from collections import defaultdict
 import math
 import logging
 from dataclasses import dataclass
@@ -301,6 +302,32 @@ def delete_log(db: Session, ocel: OcelLog) -> None:
     db.delete(ocel)
     db.commit()
     cache.invalidate_dataset(("ocel", ocel.id))
+
+
+def _chunks(ids: list, size: int = 900):
+    for i in range(0, len(ids), size):
+        yield ids[i:i + size]
+
+
+def event_attributes(db: Session, log_id: int | None, event_ids: list[str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for part in _chunks(list(dict.fromkeys(event_ids))):
+        out.update({e: a or {} for e, a in db.execute(select(OcelEvent.event_id, OcelEvent.attributes).where(
+            OcelEvent.log_id == log_id, OcelEvent.event_id.in_(part))).all()})
+    return out
+
+
+def event_objects(db: Session, log_id: int | None, event_ids: list[str], exclude: str | None = None) -> dict[str, list]:
+    """Objects related to each event (except ``exclude``): the object-centric context of a timeline."""
+    out: dict[str, list] = defaultdict(list)
+    for part in _chunks(list(dict.fromkeys(event_ids))):
+        stmt = (select(OcelE2O.event_id, OcelE2O.object_id, OcelObject.object_type, OcelE2O.qualifier)
+                .join(OcelObject, (OcelObject.log_id == OcelE2O.log_id) & (OcelObject.object_id == OcelE2O.object_id))
+                .where(OcelE2O.log_id == log_id, OcelE2O.event_id.in_(part)).order_by(OcelE2O.id))
+        for eid, oid, otype, q in db.execute(stmt).all():
+            if oid != exclude:
+                out[eid].append({"object_id": oid, "object_type": otype, "qualifier": q})
+    return dict(out)
 
 
 # =========================================================================== analysis

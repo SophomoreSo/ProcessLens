@@ -60,8 +60,8 @@ def case_ids_hash(case_ids) -> str:
 
 
 def snapshot(view: FilteredView) -> dict:
-    return {"filters": view.spec.normalized(), "case_count": int(view.case_count),
-            "case_ids_sha256": case_ids_hash(view.cases.index)}
+    return {"filters": view.spec.normalized(), "object_type": view.log.object_type,
+            "case_count": int(view.case_count), "case_ids_sha256": case_ids_hash(view.cases.index)}
 
 
 def split_cases(case_ids, train_ratio: float, seed: int) -> tuple[list[str], list[str]]:
@@ -101,8 +101,14 @@ def _view(db: Session, ds: Dataset, spec: FilterSpec) -> FilteredView:
     from app.api.deps import rule_getter
     from app.services.conformance import lookup_factory
 
-    log_ = get_event_log(db, ds)
-    return apply_filters(log_, spec, lookup_factory(log_, rule_getter(db, ds.id)))
+    from app.api.deps import dataset_object_types
+
+    ot = spec.object_type or ds.main_object_type
+    types = dataset_object_types(db, ds)
+    if types and ot not in types:
+        raise RunRequestError("ocel.err.unknown_object_type", types=ot)
+    log_ = get_event_log(db, ds, ot)
+    return apply_filters(log_, spec, lookup_factory(log_, rule_getter(db, ds.id), ds.main_object_type))
 
 
 def _timeout(requested: float | None) -> float:
@@ -132,6 +138,7 @@ def _create(db: Session, *, kind: str, ds: Dataset | None, view: FilteredView | 
     run = MiningRun(
         id=uuid.uuid4().hex, kind=kind, dataset_id=ds.id if ds else None, ocel_log_id=ocel_log_id,
         dataset_version=ds.version if ds else None, settings_revision=ds.settings_revision if ds else None,
+        object_type=view.log.object_type if view is not None else None,
         filter_snapshot=snapshot(view) if view is not None else None, split=split, algorithm_id=algorithm_id,
         params=params or {}, implementation=impl, request=request or {}, cache_key=key, status="queued",
         timeout_s=timeout_s, parent_run_id=parent_run_id, reference_model_id=reference_model_id,
@@ -449,7 +456,12 @@ def _rebuild_view(db: Session, run: MiningRun) -> tuple[Dataset, FilteredView]:
         raise TaskFailed("run.err.dataset_deleted")
     if ds.version != run.dataset_version or ds.settings_revision != run.settings_revision:
         raise TaskFailed("run.err.dataset_changed")
-    view = _view(db, ds, FilterSpec.model_validate(run.filter_snapshot["filters"]))
+    spec = FilterSpec.model_validate({**run.filter_snapshot["filters"],
+                                      "object_type": run.filter_snapshot.get("object_type") or run.object_type})
+    try:
+        view = _view(db, ds, spec)
+    except RunRequestError:
+        raise TaskFailed("run.err.snapshot_changed") from None
     if case_ids_hash(view.cases.index) != run.filter_snapshot["case_ids_sha256"]:
         raise TaskFailed("run.err.snapshot_changed")
     return ds, view
@@ -643,6 +655,7 @@ def approve_reference(db: Session, ds: Dataset, run_id: str, name: str, note: st
     reps = artifact_json(db, run.id, "representations.json") or {}
     pn = artifact(db, run.id, "model.pnml")
     ref = ReferenceModel(dataset_id=ds.id, name=name, model_type=native, representation=reps.get(native),
+                         object_type=run.object_type,
                          pnml=pn.content if pn else None,
                          source={"type": "run", "run_id": run.id, "algorithm_id": run.algorithm_id,
                                  "params": run.params, "implementation": run.implementation,
@@ -666,7 +679,7 @@ def recover_interrupted_runs() -> int:
 
 def run_out(run: MiningRun) -> dict:
     data = {c: getattr(run, c) for c in (
-        "id", "kind", "dataset_id", "ocel_log_id", "dataset_version", "settings_revision", "filter_snapshot", "split",
+        "id", "kind", "dataset_id", "ocel_log_id", "object_type", "dataset_version", "settings_revision", "filter_snapshot", "split",
         "algorithm_id", "params", "implementation", "request", "status", "stage_key", "stage_params", "progress",
         "error_key", "error_params", "result", "timeout_s", "runtime_s", "parent_run_id", "reference_model_id")}
     for c in ("created_at", "started_at", "finished_at"):

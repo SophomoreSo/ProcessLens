@@ -44,6 +44,8 @@ class ColumnMapping(BaseModel):
     start_timestamp: str | None = None
     case_status: str | None = None
     attributes: list[str] = Field(default_factory=list, description="Extra scalar columns kept as event attributes")
+    case_object_type: str | None = Field("case", max_length=255,
+                                         description="Object type of the objects identified by the case column")
 
     @field_validator("*", mode="before")
     @classmethod
@@ -54,6 +56,7 @@ class ColumnMapping(BaseModel):
 
     @model_validator(mode="after")
     def _distinct(self):
+        self.case_object_type = (self.case_object_type or "").strip() or "case"
         used = [getattr(self, f) for f in REQUIRED_FIELDS + OPTIONAL_FIELDS if getattr(self, f)]
         dupes = {c for c in used if used.count(c) > 1}
         if dupes:

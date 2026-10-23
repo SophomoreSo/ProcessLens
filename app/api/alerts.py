@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_dataset, request_lang
+from app.api.deps import get_dataset, lead_type, request_lang, rule_type
 from app.database import get_db
 from app.errors import AppError, not_found
 from app.models import Alert, AlertRule, ConformanceRule, Dataset
@@ -32,11 +32,17 @@ def _alert_rule(db: Session, ds: Dataset, rule_id: int) -> AlertRule:
     return rule
 
 
-def _check_conformance_ref(db: Session, ds: Dataset, body: AlertRuleIn) -> None:
+def _resolved(db: Session, ds: Dataset, body: AlertRuleIn, current: str | None = None) -> dict:
+    """Validated fields; conformance alerts watch the objects of their rule's type."""
+    data = body.model_dump()
     if body.conformance_rule_id is not None:
         cr = db.get(ConformanceRule, body.conformance_rule_id)
         if cr is None or cr.dataset_id != ds.id:
             raise AppError(422, "invalid_reference")
+        data["object_type"] = rule_type(ds, cr)
+    else:
+        data["object_type"] = lead_type(db, ds, body.object_type or current)
+    return data
 
 
 @router.get("/datasets/{dataset_id}/alert-rules", response_model=list[AlertRuleOut], summary="List alert rules")
@@ -47,8 +53,7 @@ def list_alert_rules(ds: Dataset = Depends(get_dataset), db: Session = Depends(g
 @router.post("/datasets/{dataset_id}/alert-rules", response_model=AlertRuleOut, status_code=201,
              summary="Create an alert rule")
 def create_alert_rule(body: AlertRuleIn, ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db)):
-    _check_conformance_ref(db, ds, body)
-    rule = AlertRule(dataset_id=ds.id, **body.model_dump())
+    rule = AlertRule(dataset_id=ds.id, **_resolved(db, ds, body))
     db.add(rule)
     db.commit()
     return rule
@@ -59,8 +64,7 @@ def create_alert_rule(body: AlertRuleIn, ds: Dataset = Depends(get_dataset), db:
 def update_alert_rule(rule_id: int, body: AlertRuleIn, ds: Dataset = Depends(get_dataset),
                       db: Session = Depends(get_db)):
     rule = _alert_rule(db, ds, rule_id)
-    _check_conformance_ref(db, ds, body)
-    for k, v in body.model_dump().items():
+    for k, v in _resolved(db, ds, body, rule.object_type).items():
         setattr(rule, k, v)
     db.commit()
     return rule

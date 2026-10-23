@@ -77,6 +77,8 @@ class ConformanceRuleIn(BaseModel):
     rule_type: RuleType
     params: dict
     enabled: bool = True
+    object_type: str | None = Field(None, max_length=255, description="Object type the rule applies to "
+                                                                       "(default: the dataset's main type)")
 
     @model_validator(mode="after")
     def _params(self):
@@ -92,6 +94,7 @@ class ConformanceRuleOut(ApiModel):
     params: dict
     enabled: bool
     revision: int
+    object_type: str | None = None
     description: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -137,6 +140,8 @@ class AlertRuleIn(BaseModel):
     severity: Severity = "medium"
     enabled: bool = True
     conformance_rule_id: int | None = None
+    object_type: str | None = Field(None, max_length=255, description="Object type whose objects are watched "
+                                                                       "(conformance alerts use the rule's type)")
 
     @model_validator(mode="after")
     def _params(self):
@@ -157,6 +162,7 @@ class AlertRuleOut(ApiModel):
     severity: str
     enabled: bool
     conformance_rule_id: int | None
+    object_type: str | None = None
     last_evaluated_at: datetime | None
     created_at: datetime
 

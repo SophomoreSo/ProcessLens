@@ -50,6 +50,8 @@ class FilterSpec(BaseModel):
     conformance_result: list[Literal["compliant", "violating", "not_evaluable"]] = Field(default_factory=list)
     transition_from: str | None = None
     transition_to: str | None = None
+    # Lead object type whose objects are the "cases" of every analysis (None = the dataset's main type).
+    object_type: str | None = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -65,7 +67,8 @@ class FilterSpec(BaseModel):
         return self
 
     def normalized(self) -> dict:
-        data = self.model_dump(mode="json", exclude_none=True)
+        """The case filters (the lead object type is a perspective, not a filter: see ``object_type``)."""
+        data = self.model_dump(mode="json", exclude_none=True, exclude={"object_type"})
         out = {}
         for k, v in sorted(data.items()):
             if isinstance(v, list):
