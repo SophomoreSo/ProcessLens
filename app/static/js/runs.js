@@ -62,6 +62,7 @@ export function provenance(run, registry) {
     [t("run.prov.implementation"), `${run.implementation?.provider || "—"} ${run.implementation?.provider_version || ""} · ${t("run.prov.adapter")} ${run.implementation?.adapter_version || "—"}`],
     run.params && Object.keys(run.params).length ? [t("run.prov.params"), h("code", {}, JSON.stringify(run.params))] : null,
     run.dataset_version ? [t("run.prov.dataset_version"), `v${run.dataset_version}`] : null,
+    run.object_type && run.kind !== "ocpn" ? [t("guide.prov.object_type"), run.object_type] : null,
     run.ocel_log_id ? [t("run.prov.ocel_log"), t("run.prov.ocel_log_value", { id: run.ocel_log_id, version: run.request?.ocel_version ?? "—",
       types: (run.request?.object_types || []).join(", ") || t("ocel.all_types") })] : null,
     run.filter_snapshot ? [t("run.prov.population"), t("run.prov.population_value", { n: fmtInt(run.filter_snapshot.case_count),

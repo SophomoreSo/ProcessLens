@@ -1,6 +1,6 @@
-import { algorithmInfo, algorithmOptions, loadRegistry, paramInputs, readParams } from "./algoforms.js";
+import { algorithmInfo, algorithmOptions, paramInputs, readParams } from "./algoforms.js";
 import {
-  $, $$, api, badge, bootPage, IS_ADMIN, clear, currentDatasetId, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
+  $, $$, api, badge, bootPage, currentObjectType, IS_ADMIN, objectTypes, clear, currentDatasetId, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
   linkWith, loading, noDatasetState, pager, reveal, showError, t, table, toast,
 } from "./core.js";
 import { downloadPng, renderModel, sizeText } from "./models.js";
@@ -13,12 +13,21 @@ const PETRI_METHODS = ["token_replay", "alignments", "soundness"];
 
 function spec(id) { return registry.find((a) => a.id === id); }
 
+const isOc = (s) => s?.input_types?.includes("ocel");
+
 function drawAlgorithm() {
   if (!$("#algorithm")) return; // guest layout: no discovery form
   const s = spec($("#algorithm").value);
   if (!s) return;
   clear($("#algo-info"), algorithmInfo(s));
   paramInputs($("#param-form"), s, getFilterOptions()?.activities || []);
+  // case-centric algorithms see the objects of the lead type as cases; OC algorithms use several types
+  $("#perspective-note").textContent = isOc(s) ? t("disc.oc_note") : t("disc.lead_type_note", { type: currentObjectType() });
+  $("#ocpn-types").classList.toggle("hidden", !isOc(s));
+  if (isOc(s)) {
+    clear($("#ocpn-types"), objectTypes().map((x) => h("label", { class: "inline" },
+      h("input", { type: "checkbox", name: "ocpn-type", value: x.name, checked: true }), x.name)));
+  }
   $("#run-discovery").disabled = s.availability.status !== "available";
 }
 
@@ -28,11 +37,14 @@ async function runDiscovery() {
   const status = $("#run-status");
   $("#run-discovery").disabled = true;
   try {
-    const res = await api(`/api/datasets/${ds}/mining/discover`, {
-      method: "POST", params: filterParams(),
-      body: { algorithm_id: s.id, params: readParams($("#param-form"), s), timeout_s: Number($("#timeout").value) || null,
-        force: $("#force").checked },
-    });
+    const common = { params: readParams($("#param-form"), s), timeout_s: Number($("#timeout").value) || null,
+      force: $("#force").checked };
+    const all = objectTypes().length;
+    const chosen = $$('input[name="ocpn-type"]:checked').map((i) => i.value);
+    const res = isOc(s)
+      ? await api(`/api/datasets/${ds}/ocel/ocpn`, { method: "POST", body: { ...common, object_types: chosen.length === all ? [] : chosen } })
+      : await api(`/api/datasets/${ds}/mining/discover`, { method: "POST", params: filterParams(),
+        body: { algorithm_id: s.id, ...common } });
     if (res.cached) toast(t("disc.cached"));
     const data = res.cached ? await api(`/api/mining/runs/${res.run.id}`) : await followRun(res.run.id, status);
     await showRun(data);
@@ -68,7 +80,7 @@ async function showRun(data) {
   const selectRep = (rt) => {
     $$(".tab", tabs).forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rep === rt)));
     const graph = renderModel(viewHost, current.reps[rt]);
-    sizeLine.textContent = sizeText(rt, run.result.sizes[rt]);
+    sizeLine.textContent = sizeText(rt, run.kind === "ocpn" ? run.result.sizes : run.result.sizes[rt]);
     const derived = current.reps[rt].derived_from;
     if (derived) sizeLine.textContent += ` · ${t("disc.derived_from", { type: t(`model.type.${derived}`) })}`;
     clear(exports, h("span", { class: "muted small" }, t("disc.export")),
@@ -85,7 +97,7 @@ async function showRun(data) {
       h("div", {}, h("h3", {}, t("disc.provenance")), provenance(run, registry),
         h("p", { class: "small muted" }, t("disc.discovery_seconds", { s: fmtNum(run.result.discovery_seconds, 3) })),
         warnings),
-      !IS_ADMIN ? null : h("div", {},
+      !IS_ADMIN || run.kind === "ocpn" ? null : h("div", {},
         h("h3", {}, t("ref.approve_title")),
         h("form", { class: "form-grid", onsubmit: async (e) => {
           e.preventDefault();
@@ -102,7 +114,7 @@ async function showRun(data) {
         h("div", { class: "actions", style: { alignSelf: "end" } }, h("button", { type: "submit", class: "btn btn-sm" }, t("ref.approve")))))));
   selectRep(native);
   reveal(card);
-  drawConformanceForm();
+  if (run.kind !== "ocpn") drawConformanceForm();  // no conformance method for OC Petri nets
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -274,7 +286,8 @@ async function render() {
     return;
   }
   if (!registry.length) {
-    registry = await loadRegistry(api);
+    const reg = await api("/api/mining/algorithms");
+    registry = [...reg.algorithms, ...reg.object_centric];
     if ($("#algorithm")) algorithmOptions($("#algorithm"), registry, "inductive_infrequent");
   }
   drawAlgorithm();

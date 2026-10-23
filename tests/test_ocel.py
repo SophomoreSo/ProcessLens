@@ -182,3 +182,26 @@ def test_demo_loads_two_object_centric_datasets(client):
     assert vendors["case_count"] > 1 and vendors["event_count"] == 5304
     ocel_ds = client.get(f"/api/datasets/{job['result']['ocel_demo_dataset_id']}").json()
     assert ocel_ds["main_object_type"] == "order" and ocel_ds["event_count"] == 527
+
+
+def test_settings_per_object_type_and_main_type_change(client):
+    ds = _dataset(client)
+    rule = client.post(f"/api/datasets/{ds}/conformance-rules", json={
+        "name": "placed", "rule_type": "required_activity", "params": {"activity": "place order"}}).json()
+    assert rule["object_type"] == "order"  # created on the lead (main) type
+    r = client.patch(f"/api/datasets/{ds}", json={"object_type": "item", "completion_mode": "end_activity",
+                                                  "completion_activities": ["deliver package"]})
+    assert r.status_code == 200 and r.json()["object_type_settings"]["item"]["completion_mode"] == "end_activity"
+    items = client.get(f"/api/datasets/{ds}/overview", params={"object_type": "item"}).json()["data"]
+    assert items["status_counts"] == {"completed": 2, "incomplete": 1, "unknown": 0}  # i1 never delivered
+    orders = client.get(f"/api/datasets/{ds}/overview").json()["data"]
+    assert orders["status_counts"]["unknown"] == 2  # the main type keeps its own (no) rule
+    opts = client.get(f"/api/datasets/{ds}/filter-options", params={"object_type": "item"}).json()
+    assert opts["object_type"] == "item" and opts["conformance_rules"] == []  # the order rule does not apply
+    r = client.patch(f"/api/datasets/{ds}", json={"main_object_type": "item"})
+    assert r.status_code == 200 and r.json()["main_object_type"] == "item"
+    assert client.get(f"/api/datasets/{ds}/overview").json()["object_type"] == "item"
+    again = client.get(f"/api/datasets/{ds}/overview").json()["data"]
+    assert again["status_counts"]["completed"] == 2  # item settings moved into the main fields
+    assert client.get(f"/api/datasets/{ds}/conformance-rules/{rule['id']}").json()["object_type"] == "order"
+    assert client.patch(f"/api/datasets/{ds}", json={"main_object_type": "car"}).status_code == 422

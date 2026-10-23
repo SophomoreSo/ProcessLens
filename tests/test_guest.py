@@ -14,7 +14,7 @@ from app.security import csrf_token
 
 ADMIN_ONLY_PAGES = ["/import", "/datasets"]
 GUEST_PAGES = ["/", "/guide", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts",
-               "/discovery", "/compare", "/ocel", "/tasks", "/settings"]
+               "/discovery", "/compare", "/relationships", "/tasks", "/settings"]
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ def test_guest_layout_has_no_admin_pages_or_write_controls(client, guest, hand_d
     assert 'id="new-rule"' in admin_conf and 'id="new-rule"' not in guest_conf
     assert 'id="run-discovery"' in client.get("/discovery").text
     assert 'id="run-discovery"' not in guest.get("/discovery").text
-    assert 'id="upload-form"' not in guest.get("/ocel").text and 'data-tab="projection"' not in guest.get("/ocel").text
+    assert guest.get("/ocel").status_code == 404 and guest.get("/relationships").status_code == 200
     assert 'id="preview-form"' not in guest.get("/tasks").text
     assert guest.get("/docs").status_code == 404 and guest.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 200

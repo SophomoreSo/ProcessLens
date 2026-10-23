@@ -391,3 +391,5 @@ dialog::backdrop { background: rgba(10, 16, 22, .45); }
 .role-extra label { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; }
 .role-extra input { width: 9rem; }
 .steps li.skipped { opacity: .45; text-decoration: line-through; }
+.obj-chip { display: inline-flex; gap: 4px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: .8rem; text-decoration: none; }
+.obj-chip:hover { border-color: var(--accent); }

@@ -1,5 +1,6 @@
 import {
-  $, api, badge, bootPage, clear, currentDataset, currentDatasetId, exportLinks, filterParams, fmtDur, fmtInt, fmtNum,
+  $, api, badge, bootPage, clear, currentDataset, currentDatasetId, exportLinks, filterParams, fmtDur,
+  fmtInt, fmtNum, perspectiveLink,
   fmtTs, h, loading, noDatasetState, pageParam, pager, RESULT_LABEL, reveal, setUrl, showError, STATUS_LABEL, t, table,
   variantSequence,
 } from "./core.js";
@@ -15,13 +16,14 @@ async function showCase(caseId) {
   loading(detail, t("cs.loading_case"));
   let res;
   try {
-    res = await api(`/api/datasets/${ds}/cases/${encodeURIComponent(caseId)}`);
+    res = await api(`/api/datasets/${ds}/cases/${encodeURIComponent(caseId)}`, { params: filterParams({}) });
   } catch (err) { return showError(detail, err); }
   const tz = res.display_timezone;
   const c = res.case;
   const anyCost = res.events.some((e) => e.cost !== null);
   clear(detail,
-    h("div", { class: "card-head" }, h("h2", {}, t("cs.case_title", { id: c.case_id })), badge(STATUS_LABEL[c.status], c.status)),
+    h("div", { class: "card-head" }, h("h2", {}, t("cs.object_title", { id: c.case_id, type: res.object_type })),
+      badge(STATUS_LABEL[c.status], c.status)),
     h("div", { class: "kpis" },
       h("div", { class: "kpi" }, h("div", { class: "label" }, t("common.events")), h("div", { class: "value" }, fmtInt(c.n_events))),
       h("div", { class: "kpi" }, h("div", { class: "label" }, t("common.observed_duration")), h("div", { class: "value" }, fmtDur(c.observed_duration_s))),
@@ -50,7 +52,35 @@ async function showCase(caseId) {
           e.execution_s !== null ? h("span", {}, t("cs.ev.execution", { duration: fmtDur(e.execution_s), start: fmtTs(e.start_timestamp, tz) })) : null,
           e.event_id ? h("span", {}, t("cs.ev.event_id", { value: e.event_id })) : null,
           h("span", {}, t("cs.ev.source_row", { row: e.source_row }))),
-        Object.keys(e.attributes).length ? h("div", { class: "ev-meta" }, Object.entries(e.attributes).map(([k, v]) => h("span", {}, `${k}: ${v}`))) : null)))));
+        e.other_objects.length ? h("div", { class: "ev-meta" }, h("span", { class: "muted" }, t("cs.ev.with_objects")),
+          e.other_objects.slice(0, 12).map((o) => h("a", { class: "obj-chip", href: perspectiveLink("/cases", o.object_type, { case: o.object_id }),
+            title: o.qualifier || o.object_type }, `${o.object_id} `, h("span", { class: "muted" }, o.object_type))),
+          e.other_objects.length > 12 ? h("span", { class: "muted" }, t("cs.ev.more_objects", { n: fmtInt(e.other_objects.length - 12) })) : null) : null,
+        Object.keys(e.attributes).length ? h("div", { class: "ev-meta" }, Object.entries(e.attributes).map(([k, v]) => h("span", {}, `${k}: ${v}`))) : null)))),
+    h("div", { id: "object-context" }));
+  loadObjectContext(ds, c.case_id, tz);
+}
+
+/** Attribute history and related objects (other types too), each a link that switches the perspective. */
+async function loadObjectContext(ds, objectId, tz) {
+  const box = $("#object-context");
+  try {
+    const o = await api(`/api/datasets/${ds}/ocel/objects/${encodeURIComponent(objectId)}`);
+    const link = (r) => h("a", { href: perspectiveLink("/cases", r.object_type, { case: r.object_id }) }, r.object_id);
+    clear(box,
+      o.attributes.length ? [h("h3", { style: { marginTop: "12px" } }, t("ocel.attribute_history")), table([
+        { key: "name", label: t("ocel.attribute") },
+        { key: "value", label: t("ocel.value"), render: (a) => a.value ?? "—" },
+        { key: "valid_from", label: t("ocel.valid_from"), render: (a) => (a.valid_from ? fmtTs(a.valid_from, tz, { seconds: true }) : t("ocel.static")) },
+      ], o.attributes)] : null,
+      h("h3", { style: { marginTop: "12px" } }, t("cs.related_objects")),
+      o.related_via_o2o.length || o.related_via_events.length ? table([
+        { key: "o", label: t("ocel.object"), render: link },
+        { key: "ty", label: t("ocel.object_type"), render: (r) => r.object_type },
+        { key: "via", label: t("ocel.direction"), render: (r) => (r.qualifier !== undefined
+          ? `${r.direction === "out" ? "→" : "←"} ${r.qualifier || "—"}` : t("cs.shared_events_n", { n: fmtInt(r.shared_events) })) },
+      ], [...o.related_via_o2o, ...o.related_via_events]) : h("p", { class: "small muted" }, t("ocel.no_relations")));
+  } catch (err) { showError(box, err); }
 }
 
 async function render() {

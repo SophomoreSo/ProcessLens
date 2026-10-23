@@ -183,6 +183,7 @@ class AlertOut(ApiModel):
     resolved_at: datetime | None
     note: str | None
     rule_name: str | None = None
+    object_type: str | None = None  # type of the alerted object (the rule's type; None = the main type)
 
 
 class AlertStatusUpdate(BaseModel):

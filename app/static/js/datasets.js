@@ -1,5 +1,5 @@
 import {
-  $, api, badge, bootPage, clear, currentDatasetId, fmtInt, fmtTs, getFilterOptions, h, loading, pageParam,
+  $, api, badge, bootPage, clear, currentDatasetId, fmtInt, fmtTs, h, loading, pageParam,
   refreshAlertBadge, refreshDatasets, reveal, setUrl, showError, t, table, toast,
 } from "./core.js";
 import { findingsTable } from "./findings.js";
@@ -79,35 +79,55 @@ async function showReport(ds) {
   } catch (err) { showError(card, err); }
 }
 
-async function showSettings(ds) {
+/** Analysis settings of one object type (the main type's live in the dataset's own fields). */
+function typeSettings(ds, ot) {
+  if (ot === ds.main_object_type) {
+    return { completion_mode: ds.completion_mode, completion_activities: ds.completion_activities,
+      completed_status_values: ds.completed_status_values, open_status_values: ds.open_status_values,
+      reference_time: ds.reference_time };
+  }
+  const s = (ds.object_type_settings || {})[ot] || {};
+  return { completion_mode: s.completion_mode || "none", completion_activities: s.completion_activities || [],
+    completed_status_values: s.completed_status_values || [], open_status_values: s.open_status_values || [],
+    reference_time: s.reference_time || null };
+}
+
+async function showSettings(ds, objectType = ds.main_object_type) {
   const card = $("#settings-card");
   card.classList.remove("hidden");
   loading(card);
   if (!timezones) timezones = (await api("/api/meta/timezones")).timezones;
-  let opts = getFilterOptions();
-  if (!opts || currentDatasetId() !== ds.id) opts = await api(`/api/datasets/${ds.id}/filter-options`);
+  const opts = await api(`/api/datasets/${ds.id}/filter-options`, { params: { object_type: objectType } });
+  const st = typeSettings(ds, objectType);
+  const typeSel = h("select", { name: "object_type", onchange: () => showSettings(ds, typeSel.value) },
+    (ds.object_types || []).map((x) => h("option", { value: x.name, selected: x.name === objectType }, x.name)));
+  const mainSel = h("select", { name: "main_object_type" },
+    (ds.object_types || []).map((x) => h("option", { value: x.name, selected: x.name === ds.main_object_type }, x.name)));
   const tz = h("select", { name: "display_timezone" }, timezones.map((z) => h("option", { value: z, selected: z === ds.display_timezone }, z)));
   const mode = h("select", { name: "completion_mode" },
     [["none", t("completion.none")], ["end_activity", t("completion.end_activity")], ["case_status", t("completion.case_status")]]
-      .map(([v, l]) => h("option", { value: v, selected: v === ds.completion_mode }, l)));
+      .map(([v, l]) => h("option", { value: v, selected: v === st.completion_mode }, l)));
   const ends = h("select", { name: "completion_activities", multiple: true },
-    opts.activities.map((a) => h("option", { value: a, selected: ds.completion_activities.includes(a) }, a)));
-  const done = h("input", { name: "completed_status_values", value: ds.completed_status_values.join(", "), placeholder: t("completion.done_placeholder") });
-  const open = h("input", { name: "open_status_values", value: ds.open_status_values.join(", "), placeholder: t("completion.open_placeholder") });
+    opts.activities.map((a) => h("option", { value: a, selected: st.completion_activities.includes(a) }, a)));
+  const done = h("input", { name: "completed_status_values", value: st.completed_status_values.join(", "), placeholder: t("completion.done_placeholder") });
+  const open = h("input", { name: "open_status_values", value: st.open_status_values.join(", "), placeholder: t("completion.open_placeholder") });
   const ref = h("input", { type: "datetime-local", name: "reference_time", step: "1",
-    value: ds.reference_time ? ds.reference_time.slice(0, 19) : "" });
+    value: st.reference_time ? st.reference_time.slice(0, 19) : "" });
   const name = h("input", { name: "name", value: ds.name, maxlength: "200" });
   const form = h("form", { class: "form-grid", onsubmit: async (e) => {
     e.preventDefault();
     const split = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
     const body = {
-      name: name.value, display_timezone: tz.value, completion_mode: mode.value,
+      name: name.value, display_timezone: tz.value, completion_mode: mode.value, object_type: objectType,
       completion_activities: [...ends.selectedOptions].map((o) => o.value),
       completed_status_values: split(done.value), open_status_values: split(open.value),
     };
     if (ref.value) body.reference_time = `${ref.value}Z`; else body.clear_reference_time = true;
     try {
       await api(`/api/datasets/${ds.id}`, { method: "PATCH", body });
+      if (mainSel.value !== ds.main_object_type) {
+        await api(`/api/datasets/${ds.id}`, { method: "PATCH", body: { main_object_type: mainSel.value } });
+      }
       toast(t("ds.settings.saved"));
       await refreshDatasets();
       render();
@@ -116,6 +136,8 @@ async function showSettings(ds) {
   } },
   h("label", {}, t("ds.settings.name"), name),
   h("label", {}, t("ds.settings.display_tz"), tz),
+  h("label", {}, t("ds.settings.main_type"), mainSel),
+  h("label", {}, t("ds.settings.settings_for"), typeSel),
   h("label", {}, t("ds.settings.completion_rule"), mode),
   h("label", {}, t("ds.settings.end_activities"), ends),
   h("label", {}, t("ds.settings.completed_values"), done),
@@ -140,7 +162,9 @@ async function render() {
     { key: "name", label: t("ds.col.dataset"), render: (d) => h("div", {}, h("b", {}, d.name), " ", d.is_demo ? badge(t("ds.synthetic"), "synthetic") : null,
       h("div", { class: "small muted" }, `${d.source_filename} · sha256 ${d.source_sha256.slice(0, 12)}…`)) },
     { key: "version", label: t("ds.col.version"), num: true, render: (d) => `v${d.version}` },
-    { key: "case_count", label: t("common.cases"), num: true, render: (d) => fmtInt(d.case_count) },
+    { key: "object_types", label: t("ds.object_types"), render: (d) => h("div", { class: "small" },
+      (d.object_types || []).map((x) => h("div", {}, x.name === d.main_object_type ? h("b", {}, x.name) : x.name,
+        h("span", { class: "muted" }, ` · ${fmtInt(x.objects)}`)))) },
     { key: "event_count", label: t("common.events"), num: true, render: (d) => fmtInt(d.event_count) },
     { key: "quarantined_count", label: t("ds.col.quarantined"), num: true, render: (d) => d.quarantined_count ? badge(fmtInt(d.quarantined_count), "warn") : "0" },
     { key: "completion", label: t("ds.col.completion"), render: (d) => t(`completion.short.${d.completion_mode}`) },

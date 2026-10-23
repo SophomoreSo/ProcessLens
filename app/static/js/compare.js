@@ -1,6 +1,6 @@
 import { loadRegistry, paramInputs, readParams } from "./algoforms.js";
 import {
-  $, $$, api, badge, bootPage, clear, currentDatasetId, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
+  $, $$, api, badge, bootPage, clear, currentDatasetId, currentObjectType, filterParams, fmtInt, fmtNum, fmtTs, getFilterOptions, h,
   noDatasetState, reveal, showError, t, table, toast,
 } from "./core.js";
 import { renderModel, sizeText } from "./models.js";
@@ -152,6 +152,7 @@ async function loadHistory() {
 }
 
 async function render() {
+  $("#perspective-note").textContent = t("disc.lead_type_note", { type: currentObjectType() || "—" });
   if (!currentDatasetId()) {
     noDatasetState($("#algo-choices") || $("#cmp-history"));
     if ($("#run-compare")) $("#run-compare").disabled = true;

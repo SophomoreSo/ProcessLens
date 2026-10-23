@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ t('nav.relationships') }}</h1>
+    <p>{{ t('rel.intro') }}</p>
+  </div>
+</div>
+<section class="card">
+  <h2>{{ t('rel.type_graph') }}</h2>
+  <p class="small muted">{{ t('rel.type_graph_note') }}</p>
+  <div id="type-graph"></div>
+  <div id="type-tables" class="grid-2" style="margin-top:10px"></div>
+</section>
+<section class="card">
+  <h2 id="delays-title">{{ t('rel.delays') }}</h2>
+  <p class="small muted">{{ t('ocel.relations_note') }}</p>
+  <div id="relations-view"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+{% include "_cytoscape.html" %}
+<script type="module" src="{{ url_for('static', path='js/relationships.js') }}"></script>
+{% endblock %}

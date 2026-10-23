@@ -247,13 +247,37 @@ export function readFilters(search = location.search) {
   return f;
 }
 
+/** Query parameters of the filters plus the lead object type (perspective) of the page. */
 export function filterParams(filters = readFilters()) {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {
     if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
     else if (v !== undefined && v !== null && v !== "") p.set(k, v);
   }
+  const ot = new URLSearchParams(location.search).get(PERSPECTIVE);
+  if (ot && !p.has(PERSPECTIVE)) p.set(PERSPECTIVE, ot);
   return p;
+}
+
+// ---------------------------------------------------------------- perspective (lead object type)
+export const PERSPECTIVE = "object_type";
+
+/** Object types of the current dataset: [{name, objects, events}]. */
+export function objectTypes() { return currentDataset()?.object_types || []; }
+
+/** The lead object type: its objects are the "cases" of every analysis on the page. */
+export function currentObjectType() {
+  const ds = currentDataset();
+  const want = new URLSearchParams(location.search).get(PERSPECTIVE);
+  if (want && objectTypes().some((t_) => t_.name === want)) return want;
+  return ds?.main_object_type || null;
+}
+
+/** Link that opens ``path`` on the same dataset seen through ``objectType``. */
+export function perspectiveLink(path, objectType, extra = {}) {
+  const p = new URLSearchParams({ dataset: currentDatasetId() ?? "", ...extra });
+  if (objectType && objectType !== currentDataset()?.main_object_type) p.set(PERSPECTIVE, objectType);
+  return `${path}?${p}`;
 }
 
 export function currentDatasetId() {
@@ -277,7 +301,7 @@ export function setUrl({ dataset, filters, extra } = {}, { replace = false } = {
   if (ds) p.set("dataset", ds);
   const cur = new URLSearchParams(location.search);
   for (const [k, v] of cur.entries()) {
-    if (!FILTER_KEYS.includes(k) && k !== "dataset" && !(extra && k in extra)) p.append(k, v);
+    if (!FILTER_KEYS.includes(k) && k !== "dataset" && k !== PERSPECTIVE && !(extra && k in extra)) p.append(k, v);
   }
   if (extra) for (const [k, v] of Object.entries(extra)) if (v !== null && v !== undefined && v !== "") p.set(k, v);
   const url = `${location.pathname}?${p.toString()}`;
@@ -318,7 +342,7 @@ async function loadFilterOptions() {
   filterOptions = null;
   const ds = currentDatasetId();
   if (!ds) return null;
-  try { filterOptions = await api(`/api/datasets/${ds}/filter-options`); } catch { filterOptions = null; }
+  try { filterOptions = await api(`/api/datasets/${ds}/filter-options`, { params: filterParams({}) }); } catch { filterOptions = null; }
   return filterOptions;
 }
 
@@ -425,7 +449,25 @@ function collectFilterForm() {
   return f;
 }
 
+function perspectiveSummary(ds) {
+  const ot = currentObjectType();
+  const info = objectTypes().find((x) => x.name === ot);
+  return info ? t("top.perspective_summary", { objects: fmtInt(info.objects), type: ot, events: fmtInt(info.events), tz: ds.display_timezone })
+    : t("top.dataset_summary", { cases: fmtInt(ds.case_count), events: fmtInt(ds.event_count), tz: ds.display_timezone });
+}
+
+function renderObjectTypeSelect() {
+  const sel = $("#object-type-select");
+  if (!sel) return;
+  const types = objectTypes();
+  const ot = currentObjectType();
+  clear(sel, types.map((x) => h("option", { value: x.name, selected: x.name === ot }, t("top.object_type_option", { type: x.name, objects: fmtInt(x.objects) }))));
+  sel.disabled = types.length < 2;
+  $("#object-type-wrap")?.classList.toggle("hidden", !types.length);
+}
+
 function renderDatasetBadges() {
+  renderObjectTypeSelect();
   const box = $("#dataset-badges");
   if (!box) return;
   const ds = currentDataset();
@@ -433,7 +475,7 @@ function renderDatasetBadges() {
   clear(box,
     ds.is_demo ? h("span", { class: "badge synthetic", title: t("top.synthetic_title") }, t("top.synthetic")) : null,
     h("span", { class: "badge", title: t("top.version_title", { version: ds.version }) }, `v${ds.version}`),
-    h("span", { class: "muted small" }, t("top.dataset_summary", { cases: fmtInt(ds.case_count), events: fmtInt(ds.event_count), tz: ds.display_timezone })),
+    h("span", { class: "muted small" }, perspectiveSummary(ds)),
     ds.quarantined_count ? h("span", { class: "badge warn", title: t("top.quarantined_title") }, t("top.quarantined", { count: fmtInt(ds.quarantined_count) })) : null);
 }
 
@@ -502,9 +544,22 @@ export async function bootPage(render, { filters = true } = {}) {
   }
   syncNavLinks();
   $("#dataset-select")?.addEventListener("change", (e) => {
+    const p = new URLSearchParams(location.search);
+    p.delete(PERSPECTIVE);  // object types belong to the previous dataset
+    history.replaceState(null, "", `${location.pathname}?${p}`);
     setUrl({ dataset: Number(e.target.value), filters: {} });
     renderDatasetBadges();
     refreshAlertBadge();
+    onChange();
+  });
+  $("#object-type-select")?.addEventListener("change", (e) => {
+    // filters (and conformance-rule filters) belong to the previous perspective
+    const p = new URLSearchParams();
+    p.set("dataset", currentDatasetId());
+    if (e.target.value !== currentDataset()?.main_object_type) p.set(PERSPECTIVE, e.target.value);
+    history.pushState(null, "", `${location.pathname}?${p}`);
+    syncNavLinks();
+    renderDatasetBadges();
     onChange();
   });
   if (filters) {

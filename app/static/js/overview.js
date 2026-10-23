@@ -1,6 +1,7 @@
 import { cssVar, esc, histogramBars, onThemeChange, render as plot } from "./charts.js";
 import {
-  $, api, badge, bootPage, clear, countUp, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtNum, fmtPct, h, linkWith,
+  $, api, badge, bootPage, clear, countUp, currentDatasetId, exportLinks, fmtDur, fmtInt, fmtNum, fmtPct, h,
+  linkWith, perspectiveLink,
   loading, noDatasetState, readFilters, reveal, showError, t, table, variantSequence,
 } from "./core.js";
 
@@ -50,6 +51,28 @@ function drawCharts() {
   }
 }
 
+async function drawObjectModel(ds) {
+  const box = $("#object-model");
+  try {
+    const s = await api(`/api/datasets/${ds}/ocel/stats`);
+    const lead = last.object_type;
+    clear(box,
+      h("p", { class: "small" }, t("ov.object_model_summary", { types: fmtInt(s.object_types.length), objects: fmtInt(s.unique_objects),
+        events: fmtInt(s.unique_events), e2o: fmtInt(s.e2o_relationships), o2o: fmtInt(s.o2o_relationships),
+        shared: fmtInt(s.shared_events) }),
+      s.cost_total_unique_events !== null ? ` ${t("ov.object_model_cost", { cost: fmtNum(s.cost_total_unique_events, 2) })}` : ""),
+      table([
+        { key: "object_type", label: t("ocel.object_type"), render: (r) => (r.object_type === lead ? h("b", {}, r.object_type, " ", badge(t("ov.lead_type"), "info"))
+          : h("a", { href: perspectiveLink(location.pathname, r.object_type) }, r.object_type)) },
+        { key: "objects", label: t("ocel.objects"), num: true, render: (r) => fmtInt(r.objects) },
+        { key: "unique_events", label: t("ocel.unique_events"), num: true, render: (r) => fmtInt(r.unique_events) },
+        { key: "e2o", label: t("ocel.e2o"), num: true, render: (r) => fmtInt(r.e2o_relationships) },
+        { key: "multi", label: t("ocel.events_several_objects"), num: true, render: (r) => fmtInt(r.events_with_several_objects_of_type) },
+      ], s.object_types),
+      h("p", { class: "small muted" }, t("ocel.counting_note")));
+  } catch (err) { showError(box, err); }
+}
+
 async function render() {
   const ds = currentDatasetId();
   if (!ds) { clear($("#overview-exports")); return noDatasetState(root); }
@@ -66,8 +89,10 @@ async function render() {
   const sc = d.status_counts;
   const popNote = d.case_count === d.total_case_count ? t("ov.all_cases") : t("ov.filtered_cases", { n: fmtInt(d.case_count), total: fmtInt(d.total_case_count) });
   const kpis = h("div", { class: "kpis" },
-    kpi(t("ov.kpi.cases"), d.case_count, popNote, { title: t("ov.kpi.cases_title"), format: fmtInt }),
-    kpi(t("ov.kpi.events"), d.event_count, t("ov.kpi.per_case", { n: fmtNum(d.event_count / d.case_count) }), { title: t("ov.kpi.events_title"), format: fmtInt }),
+    kpi(t("ov.kpi.objects", { type: last.object_type }), d.case_count, popNote, { title: t("ov.kpi.cases_title"), format: fmtInt }),
+    kpi(t("ov.kpi.events"), d.event_count, d.object_event_count !== d.event_count
+      ? t("ov.kpi.object_event_rows", { n: fmtInt(d.object_event_count) })
+      : t("ov.kpi.per_case", { n: fmtNum(d.event_count / d.case_count) }), { title: t("ov.kpi.events_title_oc"), format: fmtInt }),
     kpi(t("ov.kpi.activities"), d.activity_count, t("ov.kpi.distinct_names"), { format: fmtInt }),
     kpi(t("ov.kpi.completed"), sc.completed, d.completion_mode === "none" ? t("ov.kpi.no_rule") : t("ov.kpi.of_cases", { pct: fmtPct(sc.completed / d.case_count) }), { format: fmtInt }),
     kpi(t("ov.kpi.incomplete_unknown"), `${fmtInt(sc.incomplete)} / ${fmtInt(sc.unknown)}`, t("ov.kpi.not_known_finished")),
@@ -98,8 +123,11 @@ async function render() {
   ], d.bottleneck_candidates, { onRowClick: (tr) => { location.href = linkWith("/cases", { filters: { ...readFilters(), transition_from: tr.source, transition_to: tr.target } }); } })
     : h("div", { class: "state" }, t("ov.no_bottlenecks"));
 
+  const model = h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, t("ov.object_model")),
+    h("a", { class: "btn btn-sm", href: linkWith("/relationships") }, t("ov.object_model_link"))), h("div", { id: "object-model" }));
   clear(root,
     kpis,
+    model,
     h("div", { class: "grid-2" },
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", {}, t("ov.daily_starts")),
         h("span", { class: "small muted" }, t("ov.daily_starts_note", { tz: d.daily_case_starts.timezone }))), h("div", { id: "chart-daily", class: "chart" })),
@@ -116,6 +144,7 @@ async function render() {
         bottlenecks)),
   );
   reveal(root);
+  drawObjectModel(ds);
   reveal($(".kpis", root), { stagger: 35 });
   drawCharts();
 }

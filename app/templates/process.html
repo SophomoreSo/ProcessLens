@@ -7,7 +7,17 @@
   </div>
   <div id="process-exports"></div>
 </div>
-<section class="card">
+<div class="tabs" role="tablist" id="proc-view">
+  <button type="button" class="tab" role="tab" data-view="lead" aria-selected="true">{{ t('proc.view.lead') }}</button>
+  <button type="button" class="tab" role="tab" data-view="oc">{{ t('proc.view.oc') }}</button>
+</div>
+<section class="card hidden" id="ocdfg-card">
+  <p class="small muted">{{ t('ocel.ocdfg_note') }}</p>
+  <div id="ocdfg-types" class="type-filter"></div>
+  <div id="ocdfg-view" style="margin-top:8px"></div>
+  <div id="ocdfg-table" style="margin-top:10px"></div>
+</section>
+<section class="card" id="lead-dfg-card">
   <div class="graph-toolbar">
     <label>{{ t('proc.display') }}<select id="mode">
       <option value="frequency">{{ t('proc.mode.frequency') }}</option>
@@ -31,7 +41,7 @@
     </div>
   </div>
 </section>
-<div class="grid-2">
+<div class="grid-2" id="lead-dfg-extra">
   <section class="card"><h2>{{ t('proc.legend') }}</h2>
     <div class="legend">
       <div class="row"><span class="swatch" style="background:var(--text-muted);border-radius:999px"></span>{{ t('proc.legend.markers') }}</div>

@@ -1,5 +1,5 @@
 import {
-  $, api, applyFilters, badge, bootPage, IS_ADMIN, clear, currentDatasetId, filterParams, fmtInt, fmtPct, getFilterOptions, h,
+  $, api, applyFilters, badge, bootPage, currentDataset, currentObjectType, IS_ADMIN, perspectiveLink, clear, currentDatasetId, filterParams, fmtInt, fmtPct, getFilterOptions, h,
   linkWith, loading, noDatasetState, pager, readFilters, RESULT_LABEL, reveal, showError, STATUS_LABEL, t, table, toast,
 } from "./core.js";
 
@@ -63,7 +63,8 @@ function openEditor(rule = null) {
       else if (f === "max_count") params[f] = parseInt(el.value, 10);
       else params[f] = el.value;
     }
-    const body = { name: name.value, rule_type: typeSel.value, params, enabled: enabled.checked };
+    const body = { name: name.value, rule_type: typeSel.value, params, enabled: enabled.checked,
+      object_type: rule ? rule.object_type : currentObjectType() };
     const ds = currentDatasetId();
     try {
       const saved = rule
@@ -156,13 +157,16 @@ async function render() {
     h("p", { class: "small muted" }, t("cf.counts_over", { n: fmtInt(summary.population_case_count) })),
     table([
       { key: "name", label: t("cf.rule"), render: (r) => h("div", {}, h("b", {}, r.rule.name), h("div", { class: "small muted" }, r.rule.description)) },
-      { key: "type", label: t("cf.type"), render: (r) => ruleLabel(r.rule.rule_type) },
-      { key: "c", label: RESULT_LABEL.compliant, num: true, render: (r) => (r.rule.enabled ? fmtInt(r.compliant) : "—") },
-      { key: "v", label: RESULT_LABEL.violating, num: true, render: (r) => (r.rule.enabled ? h("b", {}, fmtInt(r.violating)) : "—") },
-      { key: "n", label: RESULT_LABEL.not_evaluable, num: true, render: (r) => (r.rule.enabled ? fmtInt(r.not_evaluable) : "—") },
+      { key: "type", label: t("cf.type"), render: (r) => h("div", {}, ruleLabel(r.rule.rule_type),
+        h("div", { class: "small muted" }, t("cf.applies_to", { type: r.rule.object_type || currentDataset()?.main_object_type }))) },
+      { key: "c", label: RESULT_LABEL.compliant, num: true, render: (r) => (r.rule.enabled && r.applies ? fmtInt(r.compliant) : "—") },
+      { key: "v", label: RESULT_LABEL.violating, num: true, render: (r) => (r.rule.enabled && r.applies ? h("b", {}, fmtInt(r.violating)) : "—") },
+      { key: "n", label: RESULT_LABEL.not_evaluable, num: true, render: (r) => (r.rule.enabled && r.applies ? fmtInt(r.not_evaluable) : "—") },
       { key: "enabled", label: t("common.status"), render: (r) => (r.rule.enabled ? badge(t("common.enabled"), "ok") : badge(t("common.disabled"))) },
       { key: "actions", label: "", render: (r) => h("div", { class: "actions" },
-        h("button", { type: "button", class: "btn btn-sm btn-primary", disabled: !r.rule.enabled, onclick: (e) => { e.stopPropagation(); evaluate(r.rule); } }, t("cf.evaluate")),
+        r.applies ? h("button", { type: "button", class: "btn btn-sm btn-primary", disabled: !r.rule.enabled, onclick: (e) => { e.stopPropagation(); evaluate(r.rule); } }, t("cf.evaluate"))
+          : h("a", { class: "btn btn-sm", href: perspectiveLink("/conformance", r.rule.object_type || currentDataset()?.main_object_type) },
+            t("cf.switch_type", { type: r.rule.object_type || currentDataset()?.main_object_type })),
         IS_ADMIN ? h("button", { type: "button", class: "btn btn-sm", onclick: (e) => { e.stopPropagation(); openEditor(r.rule); } }, t("common.edit")) : null,
         IS_ADMIN ? h("button", { type: "button", class: "btn btn-sm btn-danger", onclick: (e) => { e.stopPropagation(); removeRule(r.rule); } }, t("common.delete")) : null) },
     ], rules));

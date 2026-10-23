@@ -33,7 +33,7 @@ PAGES = [
     ("discovery", "/discovery"),
     ("compare", "/compare"),
     ("|", "beyond"),
-    ("ocel", "/ocel"),
+    ("relationships", "/relationships"),
     ("tasks", "/tasks"),
     ("|", "data"),
     ("datasets", "/datasets"),

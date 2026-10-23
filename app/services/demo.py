@@ -75,28 +75,28 @@ def create_demo_rules(db: Session, ds: Dataset, lang: str = "en") -> None:
     if db.scalar(select(func.count()).select_from(ConformanceRule).where(ConformanceRule.dataset_id == ds.id)):
         return
     rules = [
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.po_approval"), rule_type="required_activity",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.po_approval"), rule_type="required_activity",
                         params={"activity": "Approve Purchase Order", "assume_complete": False}),
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.approve_before_send"), rule_type="precedence",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.approve_before_send"), rule_type="precedence",
                         params={"activity_a": "Approve Purchase Order", "activity_b": "Send Purchase Order",
                                 "assume_complete": False}),
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.sla"), rule_type="max_duration",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.sla"), rule_type="max_duration",
                         params={"max_hours": 720.0, "metric": "completed_throughput"}),
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.one_price_change"), rule_type="max_occurrences",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.one_price_change"), rule_type="max_occurrences",
                         params={"activity": "Change Price", "max_count": 1, "assume_complete": False}),
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.starts_requisition"), rule_type="start_activity",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.starts_requisition"), rule_type="start_activity",
                         params={"activities": ["Create Purchase Requisition"]}),
-        ConformanceRule(dataset_id=ds.id, name=t(lang, "demo.rule.ends_payment"), rule_type="end_activity",
+        ConformanceRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.rule.ends_payment"), rule_type="end_activity",
                         params={"activities": ["Pay Invoice", "Cancel Purchase Order"], "assume_complete": False}),
     ]
     db.add_all(rules)
     db.flush()
     db.add_all([
-        AlertRule(dataset_id=ds.id, name=t(lang, "demo.alert.sla"), alert_type="duration_threshold",
+        AlertRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.alert.sla"), alert_type="duration_threshold",
                   params={"threshold_hours": 720.0, "metric": "completed_throughput"}, severity="high"),
-        AlertRule(dataset_id=ds.id, name=t(lang, "demo.alert.old_open"), alert_type="duration_threshold",
+        AlertRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.alert.old_open"), alert_type="duration_threshold",
                   params={"threshold_hours": 1080.0, "metric": "open_case_age"}, severity="medium"),
-        AlertRule(dataset_id=ds.id, name=t(lang, "demo.alert.unapproved"), alert_type="conformance_violation",
+        AlertRule(dataset_id=ds.id, object_type=ds.main_object_type, name=t(lang, "demo.alert.unapproved"), alert_type="conformance_violation",
                   params={}, severity="high", conformance_rule_id=rules[1].id),
     ])
     db.commit()

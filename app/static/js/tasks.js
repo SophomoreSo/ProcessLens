@@ -152,7 +152,7 @@ async function drawCases() {
     const r = await api(`/api/tasks/${current.id}/cases`, { params: { ...sess(), page: casePage, page_size: 25 } });
     const pages = Math.max(1, Math.ceil(r.cases / r.page_size));
     const caseCell = (c) => (r.dataset_id && c.in_dataset
-      ? h("a", { class: "mono", href: `/cases?${new URLSearchParams({ dataset: r.dataset_id, case: c.business_case_id })}` }, c.business_case_id)
+      ? h("a", { class: "mono", href: `/cases?${new URLSearchParams({ dataset: r.dataset_id, case: c.business_case_id, object_type: c.object_type })}` }, c.business_case_id)
       : h("span", { class: "mono" }, c.business_case_id));
     clear(box,
       h("p", { class: "small" }, t("task.cases_summary", { cases: fmtInt(r.cases), linked: fmtInt(r.linked_events), unlinked: fmtInt(r.unlinked_events) }),
@@ -164,7 +164,8 @@ async function drawCases() {
         { key: "users", label: t("task.users"), num: true, render: (c) => fmtInt(c.users) },
         { key: "apps", label: t("task.applications"), render: (c) => h("span", { class: "small" }, c.applications.join(", ")) },
         { key: "dur", label: t("task.explicit_duration"), num: true, render: (c) => (c.explicit_duration_s === null ? "—" : `${fmtDur(c.explicit_duration_s)} (${fmtInt(c.events_with_duration)}/${fmtInt(c.events)})`) },
-        { key: "in", label: t("task.in_dataset"), render: (c) => (c.in_dataset === null ? "—" : c.in_dataset ? badge(t("common.yes"), "ok") : badge(t("common.no"), "warn")) },
+        { key: "in", label: t("task.in_dataset"), render: (c) => (c.in_dataset === null ? "—" : c.in_dataset
+          ? h("span", {}, badge(t("common.yes"), "ok"), " ", h("span", { class: "small muted" }, c.object_type)) : badge(t("common.no"), "warn")) },
       ], r.items),
       h("div", { class: "actions small" },
         h("button", { type: "button", class: "btn btn-sm", disabled: casePage <= 1, onclick: () => { casePage -= 1; drawCases(); } }, "‹"),

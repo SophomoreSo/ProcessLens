@@ -171,11 +171,25 @@ function taskDfgElements(rep) {
   return els;
 }
 
+function typeGraphElements(rep) {
+  const types = rep.nodes.map((n) => n.object_type);
+  const els = rep.nodes.map((n) => ({ data: { id: `t:${n.object_type}`, kind: "activity", color: typeColor(types, n.object_type),
+    label: `${n.object_type}\n${fmtInt(n.objects)}`, tip: [[t("ocel.object_type"), n.object_type], [t("ocel.objects"), fmtInt(n.objects)],
+      [t("ocel.unique_events"), fmtInt(n.unique_events)]] } }));
+  rep.edges.forEach((e, i) => els.push({ data: { id: `s${i}`, source: `t:${e.source}`, target: `t:${e.target}`, kind: "shared",
+    label: fmtInt(e.shared_events), tip: [[t("ocel.shared_events"), fmtInt(e.shared_events)], [t("rel.object_pairs"), fmtInt(e.object_pairs)]] } }));
+  rep.o2o.forEach((e, i) => els.push({ data: { id: `o${i}`, source: `t:${e.source}`, target: `t:${e.target}`, kind: "o2o",
+    label: `${e.qualifier || "—"} (${fmtInt(e.relationships)})`, tip: [[t("ocel.qualifier"), e.qualifier || "—"], [t("ocel.o2o"), fmtInt(e.relationships)]] } }));
+  return els;
+}
+
 function colorStyle() {
   return [
     { selector: "node[color]", style: { "border-color": "data(color)" } },
     { selector: "edge[color]", style: { "line-color": "data(color)", "target-arrow-color": "data(color)" } },
     { selector: "edge[?variable]", style: { width: 4, "line-style": "solid", "line-opacity": 0.85 } },
+    { selector: 'edge[kind = "shared"]', style: { "target-arrow-shape": "none", width: 3 } },
+    { selector: 'edge[kind = "o2o"]', style: { "line-style": "dashed" } },
   ];
 }
 
@@ -202,6 +216,7 @@ export class ModelGraph {
     else if (rep.type === "oc_petri_net") elements = ocpnElements(rep);
     else if (rep.type === "object_centric_dfg") elements = ocdfgElements(rep);
     else if (rep.type === "task_dfg") elements = taskDfgElements(rep);
+    else if (rep.type === "object_type_graph") elements = typeGraphElements(rep);
     else return false;
     this.cy = cytoscape({ container: this.container, elements, style: [...baseStyle(), ...colorStyle()], layout: layout(rankDir),
       wheelSensitivity: 0.25, minZoom: 0.1, maxZoom: 3 });
@@ -296,7 +311,7 @@ export function renderModel(host, rep, { height = 520 } = {}) {
   const prev = host._modelGraph;
   if (prev) prev.destroy();
   host._modelGraph = null;
-  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system", "oc_petri_net", "object_centric_dfg", "task_dfg"].includes(rep.type)) {
+  if (["petri_net", "process_tree", "heuristics_net", "bpmn", "transition_system", "oc_petri_net", "object_centric_dfg", "task_dfg", "object_type_graph"].includes(rep.type)) {
     const canvas = h("div", { class: "graph", style: { height: `${height}px` } });
     const controls = h("div", { class: "graph-controls" });
     clear(host, h("div", { class: "graph-wrap" }, canvas, controls));

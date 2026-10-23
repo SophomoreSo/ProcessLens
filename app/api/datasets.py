@@ -90,6 +90,10 @@ def update_dataset(dataset_id: int, body: DatasetUpdate, db: Session = Depends(g
             raise AppError(422, "unknown_object_type", key="ocel.err.unknown_object_type", types=body.main_object_type)
         # the settings stay with their object type when the main type changes
         old_main = ds.main_object_type
+        # rules and models without an explicit type meant the old main type: keep them on it
+        for model in (ConformanceRule, AlertRule, ReferenceModel):
+            db.execute(update(model).where(model.dataset_id == ds.id, model.object_type.is_(None))
+                       .values(object_type=old_main))
         settings = dict(ds.object_type_settings or {})
         settings[old_main] = _type_settings_json(ds)
         new = settings.pop(body.main_object_type, {})

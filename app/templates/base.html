@@ -45,6 +45,8 @@
       <div class="topbar-row">
         <label class="inline" for="dataset-select"><span class="muted">{{ t('top.dataset') }}</span></label>
         <select id="dataset-select" aria-label="{{ t('top.select_dataset') }}"><option value="">{{ t('common.loading') }}</option></select>
+        <span id="object-type-wrap" class="inline hidden"><label class="inline" for="object-type-select"><span class="muted">{{ t('top.object_type') }}</span></label>
+          <select id="object-type-select" aria-label="{{ t('top.object_type_help') }}" title="{{ t('top.object_type_help') }}"></select></span>
         <span id="dataset-badges" class="chips"></span>
         <span class="grow"></span>
         <button type="button" id="filters-button" class="btn">{{ t('filters.button') }} <span class="badge" id="filter-count">0</span></button>

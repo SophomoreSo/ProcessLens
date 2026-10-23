@@ -18,9 +18,10 @@ from app.services.alerts import evaluate_alert_rules
 router = APIRouter(prefix="/api", tags=["alerts"])
 
 
-def alert_out(alert: Alert, rule_name: str | None, lang: str) -> AlertOut:
+def alert_out(alert: Alert, rule_name: str | None, lang: str, object_type: str | None = None) -> AlertOut:
     out = AlertOut.model_validate(alert)
     out.rule_name = rule_name
+    out.object_type = object_type
     out.message = render(lang, alert.message_key, alert.message_params, fallback=alert.message)
     return out
 
@@ -92,7 +93,7 @@ def list_alerts(dataset_id: int | None = None, status: list[str] = Query(default
                 alert_rule_id: int | None = None, active_only: bool = False,
                 page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
                 db: Session = Depends(get_db), lang: str = Depends(request_lang)):
-    q = select(Alert, AlertRule.name).join(AlertRule, AlertRule.id == Alert.alert_rule_id)
+    q = select(Alert, AlertRule.name, AlertRule.object_type).join(AlertRule, AlertRule.id == Alert.alert_rule_id)
     if dataset_id is not None:
         q = q.where(Alert.dataset_id == dataset_id)
     if status:
@@ -105,8 +106,8 @@ def list_alerts(dataset_id: int | None = None, status: list[str] = Query(default
     rows = db.execute(q.order_by(Alert.first_detected_at.desc(), Alert.id.desc())
                       .offset((page - 1) * page_size).limit(page_size)).all()
     items = []
-    for alert, name in rows:
-        items.append(alert_out(alert, name, lang))
+    for alert, name, otype in rows:
+        items.append(alert_out(alert, name, lang, otype))
     return Page[AlertOut](items=items, total=total or 0, page=page, page_size=page_size)
 
 

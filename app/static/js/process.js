@@ -1,9 +1,10 @@
 import { onThemeChange } from "./charts.js";
 import {
-  $, api, bootPage, clear, currentDatasetId, exportLinks, fmtInt, h, linkWith, loading, motionEnabled, noDatasetState,
-  readFilters, showError, t,
+  $, $$, api, bootPage, clear, currentDatasetId, exportLinks, fmtDur, fmtInt, h, linkWith, loading,
+  motionEnabled, noDatasetState, objectTypes, readFilters, showError, t, table,
 } from "./core.js";
 import { ProcessGraph } from "./graph.js";
+import { renderModel, typeColor } from "./models.js";
 
 const container = $("#graph");
 const graph = new ProcessGraph(container, {
@@ -25,7 +26,54 @@ function thresholds() {
   graph.setThresholds(n / 100, e / 100);
 }
 
+// ---------------------------------------------------------------- object-centric DFG (all object types)
+let view = new URLSearchParams(location.search).get("view") === "oc" ? "oc" : "lead";
+let ocTypes = null;
+
+function selectView(next) {
+  view = next;
+  $$("#proc-view .tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  $("#ocdfg-card").classList.toggle("hidden", view !== "oc");
+  $("#lead-dfg-card").classList.toggle("hidden", view === "oc");
+  $("#lead-dfg-extra").classList.toggle("hidden", view === "oc");
+  const p = new URLSearchParams(location.search);
+  if (view === "oc") p.set("view", "oc"); else p.delete("view");
+  history.replaceState(null, "", `${location.pathname}?${p}`);
+  if (view === "oc") drawOcdfg();
+}
+
+async function drawOcdfg() {
+  const ds = currentDatasetId();
+  if (!ds) return noDatasetState($("#ocdfg-view"));
+  const names = objectTypes().map((x) => x.name);
+  if (ocTypes === null) ocTypes = [...names];
+  clear($("#ocdfg-types"), names.map((ty) => h("label", { class: "inline" },
+    h("input", { type: "checkbox", value: ty, checked: ocTypes.includes(ty), onchange: () => {
+      ocTypes = $$("#ocdfg-types input:checked").map((i) => i.value);
+      drawOcdfg();
+    } }), h("i", { class: "swatch", style: { background: typeColor(names, ty), width: "10px", height: "10px", borderRadius: "50%", display: "inline-block" } }), ty)));
+  if (!ocTypes.length) return clear($("#ocdfg-view"), h("p", { class: "muted" }, t("ocel.empty_selection")));
+  try {
+    const g = await api(`/api/datasets/${ds}/ocel/ocdfg`, { params: { object_type: ocTypes.length === names.length ? [] : ocTypes } });
+    g.object_types = names.filter((n) => g.object_types.includes(n));  // stable colours across selections
+    renderModel($("#ocdfg-view"), g, { height: 580 });
+    clear($("#ocdfg-table"), h("details", {}, h("summary", {}, t("ocel.edge_table")), table([
+      { key: "object_type", label: t("ocel.object_type") },
+      { key: "source", label: t("model.from") },
+      { key: "target", label: t("model.to") },
+      { key: "object_transitions", label: t("ocel.object_transitions"), num: true, render: (e) => fmtInt(e.object_transitions) },
+      { key: "objects", label: t("ocel.objects"), num: true, render: (e) => fmtInt(e.objects) },
+      { key: "pairs", label: t("ocel.unique_event_pairs"), num: true, render: (e) => fmtInt(e.unique_event_pairs) },
+      { key: "median", label: t("ocel.median_elapsed"), num: true, render: (e) => fmtDur(e.median_elapsed_s) },
+    ], g.edges)));
+  } catch (err) { showError($("#ocdfg-view"), err); }
+}
+
+$$("#proc-view .tab").forEach((b) => b.addEventListener("click", () => selectView(b.dataset.view)));
+
 async function render() {
+  ocTypes = null;
+  selectView(view);
   const ds = currentDatasetId();
   graph.setData(null);  // destroy any previous Cytoscape instance before reusing the container
   if (!ds) { clear($("#process-exports")); return noDatasetState(container); }

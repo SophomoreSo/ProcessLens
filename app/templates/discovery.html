@@ -13,6 +13,8 @@
     <label>{{ t('disc.choose_algorithm') }}<select id="algorithm"></select></label>
     <div id="algo-info" class="small" style="margin-top:8px"></div>
     <form id="param-form" class="form-grid" style="margin-top:10px"></form>
+    <p class="small notice info" id="perspective-note" style="margin-top:8px"></p>
+    <div id="ocpn-types" class="type-filter hidden" style="margin-top:8px"></div>
     <div class="form-grid" style="margin-top:10px">
       <label>{{ t('disc.timeout') }}<input type="number" id="timeout" min="1" max="3600" step="1" value="300"></label>
       <label class="inline" style="align-self:end"><input type="checkbox" id="force"> {{ t('disc.force') }}</label>

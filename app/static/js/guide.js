@@ -1,13 +1,12 @@
 // Guided analysis: pick a question, set its parameters, get a fully documented answer.
 import { cssVar, esc, render as plot } from "./charts.js";
 import {
-  $, $$, api, badge, bootPage, clear, currentDataset, currentDatasetId, filterParams, fmtDur, fmtInt, fmtNum, fmtPct, h,
-  noDatasetState, readFilters, reveal, showError, t, table,
+  $, $$, api, badge, bootPage, clear, currentDataset, currentDatasetId, currentObjectType, filterParams, fmtDur, fmtInt,
+  fmtNum, fmtPct, h, noDatasetState, perspectiveLink, readFilters, reveal, showError, t, table,
 } from "./core.js";
 
 let questions = [];
 let selected = null;
-let ocelLogs = [];
 
 const sp = () => new URLSearchParams(location.search);
 
@@ -27,23 +26,10 @@ function selectQuestion(id) {
 function drawSource() {
   const box = $("#q-source");
   $("#ask").disabled = false;
-  if (selected.source === "ocel") {
-    if (!ocelLogs.length) {
-      $("#ask").disabled = true;
-      clear(box, h("p", { class: "notice warn small" }, t("guide.needs_ocel_hint"), " ", h("a", { href: "/ocel" }, t("nav.ocel"))));
-      return;
-    }
-    const sel = h("select", { id: "ocel-log" }, ocelLogs.map((l) => h("option", { value: l.id }, `${l.name} (#${l.id})`)));
-    const want = Number(sp().get("ocel_log_id"));
-    if (ocelLogs.some((l) => l.id === want)) sel.value = want;
-    sel.addEventListener("change", drawParams);
-    clear(box, h("label", {}, t("guide.ocel_log"), sel));
-    return;
-  }
   const ds = currentDataset();
   if (!ds) { $("#ask").disabled = true; noDatasetState(box); return; }
   const filters = readFilters();
-  clear(box, h("p", { class: "small" }, t("guide.on_dataset", { name: ds.name, version: ds.version }), " ",
+  clear(box, h("p", { class: "small" }, t("guide.on_dataset_type", { name: ds.name, version: ds.version, type: currentObjectType() }), " ",
     Object.keys(filters).length ? badge(t("guide.filters_applied", { n: Object.keys(filters).length }), "info") : badge(t("guide.no_filters"))));
 }
 
@@ -55,10 +41,6 @@ function drawParams() {
     let input;
     if (p.type === "choice") {
       input = h("select", { name: p.name }, p.choices.map((c) => h("option", { value: c, selected: String(v) === c }, t(`guide.choice.${c}`))));
-    } else if (p.type === "object_type") {
-      const log = ocelLogs.find((l) => l.id === Number($("#ocel-log")?.value));
-      const types = log ? log.object_types.map((x) => x.name) : [];
-      input = h("select", { name: p.name }, types.map((c) => h("option", { value: c, selected: v === c }, c)));
     } else {
       input = h("input", { type: "number", name: p.name, value: v ?? "", min: p.minimum ?? "", max: p.maximum ?? "",
         step: p.type === "int" ? "1" : "any", placeholder: v === null ? t("guide.optional") : "" });
@@ -107,6 +89,7 @@ function provenanceBlock(a) {
     ? [[t("guide.prov.ocel_log"), `${pv.ocel_log_name} (#${pv.ocel_log_id}), ${t("guide.prov.version", { v: pv.ocel_version })}`],
       [t("guide.prov.selection"), `${t("ocel.object_type")}: ${pv.filters.object_type}`]]
     : [[t("guide.prov.dataset"), `${pv.dataset_name} (#${pv.dataset_id}), ${t("guide.prov.version", { v: pv.dataset_version })} · ${t("guide.prov.settings", { r: pv.settings_revision })}`],
+      [t("guide.prov.object_type"), pv.object_type],
       [t("guide.prov.filters"), Object.keys(pv.filters).length ? h("code", { class: "small" }, JSON.stringify(pv.filters)) : t("guide.no_filters")],
       [t("guide.prov.population"), t("guide.prov.population_value", { n: fmtInt(pv.population.cases), total: fmtInt(pv.population.total_cases) })]];
   rows.push([t("guide.prov.sample"), `${fmtInt(pv.sample.n)} ${t(pv.sample.label_key)}`]);
@@ -130,8 +113,7 @@ function drawAnswer(a) {
   const card = $("#answer-card");
   card.classList.remove("hidden");
   const chartEl = h("div", { class: "answer-chart" });
-  const datasetId = a.provenance.dataset_id;
-  const caseLink = (v) => h("a", { class: "mono", href: `/cases?${new URLSearchParams({ dataset: datasetId, case: v })}` }, v);
+  const caseLink = (v) => h("a", { class: "mono", href: perspectiveLink("/cases", a.provenance.object_type, { case: v }) }, v);
   clear(card,
     h("div", { class: "card-head" }, h("h2", {}, t(a.title_key)), a.status === "answered" ? badge(t("guide.answered"), "ok") : badge(t("guide.not_answerable"), "warn")),
     a.status === "answered" ? h("p", { class: "answer-headline" }, headlineText(a.headline)) : h("p", { class: "notice warn" }, t(a.reason.key, a.reason.params)),
@@ -151,17 +133,13 @@ async function ask() {
   if (!selected) return;
   const params = {};
   for (const el of $("#q-params").elements) if (el.name && el.value !== "") params[el.name] = el.value;
-  const query = selected.source === "ocel"
-    ? { question: selected.id, ocel_log_id: $("#ocel-log").value, ...params }
-    : { question: selected.id, dataset_id: currentDatasetId(), ...params };
-  const qs = new URLSearchParams(query);
-  if (selected.source === "dataset") for (const [k, v] of filterParams().entries()) qs.append(k, v);
+  const qs = new URLSearchParams({ question: selected.id, dataset_id: currentDatasetId(), ...params });
+  for (const [k, v] of filterParams().entries()) qs.append(k, v);
   $("#ask").disabled = true;
   try {
     drawAnswer(await api(`/api/guide/answer?${qs}`));
     const u = new URLSearchParams(location.search);
     for (const [k, v] of Object.entries(params)) u.set(k, v);
-    if (selected.source === "ocel") u.set("ocel_log_id", query.ocel_log_id);
     history.replaceState(null, "", `${location.pathname}?${u}`);
   } catch (err) { $("#answer-card").classList.remove("hidden"); showError($("#answer-card"), err); } finally { $("#ask").disabled = false; }
 }
@@ -169,13 +147,11 @@ async function ask() {
 async function render() {
   try {
     if (!questions.length) questions = (await api("/api/guide/questions")).questions;
-    ocelLogs = (await api("/api/ocel")).items;
   } catch (err) { showError($("#question-list"), err); return; }
   clear($("#question-list"), questions.map((q) => h("button", { type: "button", class: "question", role: "radio", "aria-checked": "false",
     "data-id": q.id, onclick: () => selectQuestion(q.id) },
   h("div", { class: "q-title" }, t(q.title_key)),
-  h("div", { class: "small muted" }, t(q.description_key)),
-  h("div", { style: { marginTop: "4px" } }, badge(q.source === "ocel" ? t("guide.source.ocel") : t("guide.source.dataset"))))));
+  h("div", { class: "small muted" }, t(q.description_key)))));
   const want = sp().get("q");
   if (want) selectQuestion(want);
   else if (selected) selectQuestion(selected.id);

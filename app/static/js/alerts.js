@@ -1,5 +1,5 @@
 import {
-  $, api, badge, bootPage, IS_ADMIN, clear, currentDatasetId, fmtInt, fmtTs, getFilterOptions, h, linkWith, loading,
+  $, api, badge, bootPage, currentDataset, currentObjectType, IS_ADMIN, perspectiveLink, clear, currentDatasetId, fmtInt, fmtTs, getFilterOptions, h, linkWith, loading,
   noDatasetState, pager, refreshAlertBadge, reveal, SEVERITY_LABEL, showError, t, table, toast,
 } from "./core.js";
 
@@ -52,7 +52,8 @@ function openEditor(rule = null) {
   type.addEventListener("change", draw);
   const form = h("form", { onsubmit: async (e) => {
     e.preventDefault();
-    const body = { name: name.value, alert_type: type.value, severity: severity.value, enabled: enabled.checked, params: {} };
+    const body = { name: name.value, alert_type: type.value, severity: severity.value, enabled: enabled.checked, params: {},
+      object_type: rule ? rule.object_type : currentObjectType() };
     if (type.value === "duration_threshold") {
       body.params = { metric: form.elements.metric.value, threshold_hours: Number(form.elements.threshold_hours.value) };
     } else if (type.value === "rework") {
@@ -105,7 +106,8 @@ async function loadAlerts() {
     { key: "severity", label: t("al.severity"), render: (a) => badge(SEVERITY_LABEL[a.severity] || a.severity, a.severity) },
     { key: "status", label: t("common.status"), render: (a) => badge(STATUS[a.status] || a.status, a.status) },
     { key: "rule", label: t("cf.rule"), render: (a) => a.rule_name },
-    { key: "case", label: t("common.case"), render: (a) => h("a", { class: "mono", href: linkWith("/cases", { filters: {}, extra: { case: a.case_id } }) }, a.case_id) },
+    { key: "case", label: t("common.object"), render: (a) => h("a", { class: "mono", href: perspectiveLink("/cases", a.object_type, { case: a.case_id }) },
+      a.case_id, a.object_type ? h("span", { class: "muted small" }, ` (${a.object_type})`) : null) },
     { key: "message", label: t("finding.col.message"), render: (a) => h("div", {}, a.message, a.condition_active ? null : h("div", { class: "small muted" }, t("al.condition_gone"))) },
     { key: "detected", label: t("al.first_detected"), render: (a) => fmtTs(`${a.first_detected_at}Z`, "UTC") },
     { key: "actions", label: "", render: (a) => (!IS_ADMIN ? null : h("div", { class: "actions" },
@@ -130,7 +132,8 @@ async function render() {
     h("p", { class: "small muted" }, t("al.counts", { open: fmtInt(counts.open), acknowledged: fmtInt(counts.acknowledged), resolved: fmtInt(counts.resolved) })),
     rules.length ? table([
       { key: "name", label: t("cf.rule"), render: (r) => h("div", {}, h("b", {}, r.name), h("div", { class: "small muted" }, describe(r, crules))) },
-      { key: "type", label: t("cf.type"), render: (r) => TYPES[r.alert_type] },
+      { key: "type", label: t("cf.type"), render: (r) => h("div", {}, TYPES[r.alert_type],
+        h("div", { class: "small muted" }, t("cf.applies_to", { type: r.object_type || currentDataset()?.main_object_type }))) },
       { key: "severity", label: t("al.severity"), render: (r) => badge(SEVERITY_LABEL[r.severity] || r.severity, r.severity) },
       { key: "enabled", label: t("common.enabled"), render: (r) => (r.enabled ? badge(t("common.enabled"), "ok") : badge(t("common.disabled"))) },
       { key: "last", label: t("al.last_evaluated"), render: (r) => (r.last_evaluated_at ? fmtTs(`${r.last_evaluated_at}Z`, "UTC") : t("common.never")) },

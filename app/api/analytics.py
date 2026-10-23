@@ -48,8 +48,9 @@ def overview(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filt
 
 
 @router.get("/filter-options", summary="Values available for filter pickers")
-def filter_options(ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db)):
-    log, view = build_view(db, ds, FilterSpec())
+def filter_options(ds: Dataset = Depends(get_dataset), spec: FilterSpec = Depends(filter_params),
+                   db: Session = Depends(get_db)):
+    log, view = build_view(db, ds, FilterSpec(object_type=spec.object_type))
     ev = log.events
 
     def values(col: str) -> list[str]:
@@ -64,8 +65,10 @@ def filter_options(ds: Dataset = Depends(get_dataset), db: Session = Depends(get
             "min": first.tz_convert(tz).date().isoformat() if first is not None else None,
             "max": last.tz_convert(tz).date().isoformat() if last is not None else None,
         },
+        "object_type": log.object_type,
         "conformance_rules": [{"id": r.id, "name": r.name} for r in db.scalars(
-            select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id).order_by(ConformanceRule.id))],
+            select(ConformanceRule).where(ConformanceRule.dataset_id == ds.id).order_by(ConformanceRule.id))
+            if rule_type(ds, r) == log.object_type],  # filters can only use rules of the lead type
         "capabilities": analytics.log_capabilities(log),
         "completion_mode": log.completion_mode,
     }

@@ -16,7 +16,7 @@ from tests.conftest import HAND_CHECK, HAND_MAPPING, HAND_OPTIONS, run_import
 LOCALES = PROJECT_ROOT / "app" / "i18n" / "locales"
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
 PAGES = ["/", "/guide", "/process", "/variants", "/cases", "/performance", "/conformance", "/alerts", "/discovery", "/compare",
-         "/ocel", "/tasks", "/datasets", "/import", "/settings"]
+         "/relationships", "/tasks", "/datasets", "/import", "/settings"]
 
 
 def raw(lang: str) -> dict:
