@@ -1,13 +1,15 @@
 # ProcessLens
 
-ProcessLens is a local-first, single-user web application for **process mining and process
-analysis**. A business analyst can import a CSV or XES event log, map and validate it, and then explore
-the process: KPIs, a directly-follows graph, variants, case histories, performance, rule-based
-conformance, cohort comparisons, in-app alerts and exports. On top of that it offers process
-discovery with 14 algorithms, formal conformance checking (token replay, alignments, soundness,
-declarative checks), an algorithm comparison workspace with case-level train/test splits,
-object-centric mining of OCEL 2.0 logs, task mining on exported user-interaction events, and
-guided, question-driven analysis.
+ProcessLens is a local-first web application for **object-centric process mining and process
+analysis**. A business analyst imports a CSV, XES or OCEL 2.0 event log, maps it to events and
+objects of several types, validates it, and then explores the process from any object type's
+point of view: KPIs, directly-follows graphs (per type and object-centric), variants, object
+histories with their related objects, performance, rule-based conformance, cohort comparisons,
+in-app alerts and exports. On top of that it offers process discovery with 14 algorithms plus
+object-centric Petri nets, formal conformance checking (token replay, alignments, soundness,
+declarative checks), an algorithm comparison workspace with case-level train/test splits, task
+mining on exported user-interaction events, guided question-driven analysis, and a read-only
+guest site.
 
 > ProcessLens is an independent implementation with its own branding. It is inspired by the
 > kind of analysis commercial process-mining suites offer, but it is **not affiliated with
@@ -20,8 +22,8 @@ Documentation:
 * **[docs/MINING.md](docs/MINING.md)** — discovery algorithms (support matrix, parameters,
   limitations, unavailable algorithms), model exports, formal conformance, comparison and
   mining runs.
-* **[docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md)** — OCEL 2.0 import, counting rules,
-  OC-DFG, object timelines, OC Petri nets, flattening.
+* **[docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md)** — the object-centric data model: storage,
+  lead object types (perspectives), counting rules, imports, object-centric views, export.
 * **[docs/TASK_MINING.md](docs/TASK_MINING.md)** — task-event import, sessionization, task
   analyses, privacy.
 * **[docs/GUIDED_ANALYSIS.md](docs/GUIDED_ANALYSIS.md)** — questions and answer structure.
@@ -127,9 +129,11 @@ analyses that use CPU on your computer.
 ## Assumptions and architecture
 
 * **Single user, single process, local machine.** No authentication; bound to localhost.
-* **Case-centric datasets** (every event belongs to exactly one case) are the core. Object-centric
-  logs (OCEL 2.0) and task-event logs are stored in their own tables and are never forced into
-  the case table; flattening an OCEL log into a dataset is an explicit, acknowledged action.
+* **Object-centric datasets.** Every dataset is an OCEL-style log: events (stored once), objects
+  of several types, event–object and object–object relationships, object attribute histories.
+  Analyses use a **lead object type** whose objects play the role of cases; every page can
+  switch it, and shared events are counted once (see [docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md)).
+  Task-event logs are stored separately and link to objects by id.
 * **Business logic in Python.** The browser only fetches, formats and renders; every number
   on screen comes from the API.
 * **Explicitness over convenience**: nothing is silently dropped, timezones and DST handling
@@ -158,7 +162,7 @@ SQLAlchemy models (app/models) + Alembic migrations  →  SQLite (default) / Pos
 | Persistence | SQLAlchemy 2.1, Alembic, SQLite (WAL) |
 | Analysis | pandas 3.0, numpy; PM4Py 2.7.23 for discovery, formal conformance, OC Petri nets and XES export (run in a separate worker process), and as a cross-check of DFG discovery in the tests |
 | Frontend | HTML5, CSS3, vanilla ES modules, Cytoscape.js 3.30 (+ dagre layout), Plotly.js 2.35 (basic bundle) — vendored in `app/static/vendor`, no CDN at runtime |
-| Tests | pytest (167 tests) |
+| Tests | pytest (176 tests) |
 
 ### Project structure
 
@@ -171,7 +175,7 @@ app/
   migrate.py         programmatic `alembic upgrade head`
   security.py        CSRF token, Origin check, security headers / CSP
   errors.py          uniform JSON error responses
-  models/            Upload, Dataset, Event, ImportFinding, QuarantinedRow, ImportJob,
+  models/            Upload, Dataset, Event (legacy_events, pre-0007), ImportFinding, QuarantinedRow, ImportJob,
                      ConformanceRule, AlertRule, Alert, UserPreferences, MiningRun,
                      MiningArtifact, ReferenceModel, Ocel* (log, events, objects, attributes,
                      E2O, O2O), TaskLog, TaskEvent
@@ -179,7 +183,9 @@ app/
   api/               imports, datasets, analytics, conformance, alerts, exports, meta,
                      preferences, mining, ocel, tasks, guide, pages
   services/          ingestion, validation, importer, jobs, eventlog, filtering, analytics,
-                     conformance, alerts, exports, cache, demo, preferences, ocel, tasks, guide
+                     conformance, alerts, exports, cache, demo, preferences, ocel, ocel_store
+                     (the single OCEL writer of every import), ocel_import, ocel_export, xes,
+                     tasks, guide
   mining/            registry (algorithm adapters), tasks (PM4Py calls), serialize (model
                      JSON), worker (isolated process), runs (snapshots, cache, supervisor)
   i18n/              translation catalogs (en, ko, pl)
@@ -201,21 +207,27 @@ Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 
 ### Import wizard (Import page)
 
-1. **Upload** a CSV (`.csv`, `.txt`, `.tsv`) or an **XES** event log (`.xes`, `.xes.gz`). The file
-   gets a server-generated name; size, row, column and field-length limits are enforced; binary
-   files are refused. See [XES import](#xes-import) for how XES logs become rows.
+1. **Upload** a CSV (`.csv`, `.txt`, `.tsv`), an **XES** event log (`.xes`, `.xes.gz`) or an
+   **OCEL 2.0 JSON** log (`.json`, `.jsonocel`). The file gets a server-generated name; size,
+   row, column and field-length limits are enforced; binary files are refused. See
+   [XES import](#xes-import); OCEL files are validated on upload and then only need a main object
+   type and a field mapping (steps 3–4 are skipped) — see [docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md).
 2. **Preview & mapping**: sample rows, detected encoding/delimiter (overridable), suggested
    column mapping. Required: `case_id`, `activity`, `timestamp`. Optional: `event_id`,
-   `resource`, `department`, `cost`, `start_timestamp`, `case_status`, plus any extra columns
-   kept as scalar event attributes. All values are read as **text** (leading zeros survive).
+   `resource`, `department`, `cost`, `start_timestamp`, `case_status`. **Objects:** name the
+   object type of the case column (default `case`) and give every other column a role — event
+   attribute, attribute of the case object (kept as attribute history), related objects of a
+   type you name (with an optional separator for multi-valued cells), or not imported. All
+   values are read as **text** (leading zeros survive).
 3. **Timestamps**: format (`ISO8601`, presets, custom strftime, Unix s/ms — with the share of
    sampled values each candidate parses), source timezone, display timezone, and an explicit
    policy for **ambiguous** (DST fall-back: reject / earliest / latest) and **nonexistent**
    (DST spring-forward: reject / shift forward / shift backward) local times.
 4. **Validation findings**: every row is validated — missing case IDs, empty activities,
    missing/malformed timestamps, DST problems, duplicate event IDs (all rows sharing an ID are
-   flagged), invalid or non-finite costs, start later than completion, wrong field counts.
-   Warnings cover timestamp ties, negative costs, trimmed whitespace. Download the full report
+   flagged), invalid or non-finite costs, start later than completion, wrong field counts, and
+   object ids used with two object types. Warnings cover timestamp ties, negative costs, trimmed
+   whitespace; notes cover empty and possibly multi-valued object cells. Download the full report
    as CSV or JSON.
 5. **Confirm**: new dataset or new version of an existing one, invalid-row policy —
    **reject the import** if any row is invalid, or **quarantine** invalid rows (stored with
@@ -224,14 +236,17 @@ Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 ### XES import
 
 XES files (IEEE 1849, also gzip-compressed) are converted on upload into the same table the CSV
-wizard uses — one row per event — so mapping, timestamp options, validation, quarantine and
+wizard uses — one row per event — and imported as **object-centric** data: each trace becomes
+an object (of a type you name), and mapping, timestamp options, validation, quarantine and
 versioning work exactly as for CSV. The conversion streams the XML (100,000 events in about
 1 s on the benchmark machine).
 
 * **Columns:** event attributes keep their XES keys (`concept:name`, `time:timestamp`,
   `org:resource`, `org:group`, `cost:total`, `identity:id`, …); trace attributes are prefixed
-  with `case:` (`case:concept:name` is the case id). The standard keys are mapped
-  automatically; the other columns are offered as event attributes.
+  with `case:` (`case:concept:name` identifies the trace object). The standard keys are mapped
+  automatically, trace attributes are suggested as attributes of the trace object, and event
+  attributes such as `org:resource` can be turned into **objects** (role *related objects*), so
+  events are shared between traces and those objects.
 * **Lifecycle:** *one row per completed activity* pairs each `complete` event with the earliest
   unmatched `start` event of the same activity (and `concept:instance`, if present) in the same
   trace and fills `start_timestamp`; other transitions and unmatched starts are left out and
@@ -247,8 +262,8 @@ versioning work exactly as for CSV. The conversion streams the XML (100,000 even
 * **Safety:** documents with a DTD (`<!DOCTYPE`/`<!ENTITY`) are refused, and the size limit
   applies to the *uncompressed* XML of `.xes.gz` files.
 
-The XES **export** (`…/exports/events.xes`) now omits missing resources, departments and costs
-instead of writing empty or `nan` values, so an exported log imports again unchanged (tested).
+The XES **export** (`…/exports/events.xes`) writes the lead object type (trace = object) and omits
+missing resources, departments and costs, so an exported log imports again unchanged (tested).
 
 The import runs as a background job with progress; all data is written in **one transaction**
 so a failed or interrupted import never leaves partial data. Each successful import
@@ -259,21 +274,22 @@ increments the dataset **version**, invalidates cached analytics and evaluates a
 | Page | What it shows |
 |---|---|
 | **Guided analysis** | Predefined questions (longest transitions, rework variants, SLA violations, department differences, object relationships and delays) answered with metric definition, dataset version, filters, sample size, chart, table and links. |
-| **Overview** | Case/event/activity counts, completed vs incomplete/unknown, observed duration, completed throughput and open-case age (each with its population and n), rework rate, variant count, daily case starts, duration distribution, top variants, bottleneck candidates. |
-| **Process explorer** | Directly-follows graph with synthetic start/end markers, frequency or elapsed-time mode (median/p90/mean), edge occurrences and distinct cases in tooltips, zoom/pan/fit/reset, render-only node/edge thresholds, legend, click-through to matching cases, transitions CSV and XES export. |
+| **Top bar** | Dataset selector and **Objects** selector (lead object type, kept in the URL across pages) with the type's objects and unique events. |
+| **Overview** | Object/unique-event/activity counts (object-event rows when events are shared), an **object model** panel with every object type, completed vs incomplete/unknown, observed duration, completed throughput and open-case age (each with its population and n), rework rate, variant count, daily case starts, duration distribution, top variants, bottleneck candidates. |
+| **Process explorer** | Switch between the lead type's graph and an **object-centric DFG** (all or selected types, one colour per type). Directly-follows graph with synthetic start/end markers, frequency or elapsed-time mode (median/p90/mean), edge occurrences and distinct cases in tooltips, zoom/pan/fit/reset, render-only node/edge thresholds, legend, click-through to matching cases, transitions CSV and XES export. |
 | **Variants** | Sequences with case count, share, cumulative coverage, median/p90 observed duration and rework markers. Selecting a variant highlights its path and lists its cases; it can be applied as a global filter. |
-| **Cases** | Paginated, sortable table; case timeline with timestamps (display timezone), resources, departments, costs, execution times, gaps, tie markers, attributes and conformance findings. |
+| **Objects** | Paginated, sortable table of the lead type's objects; timeline with timestamps (display timezone), resources, departments, costs, execution times, gaps, tie markers, attributes, conformance findings and the **other objects of each event**; attribute history and related objects (O2O and shared events), each linking to its own perspective. |
 | **Performance** | Transitions ranked by median/p90 elapsed time; resource and department comparisons with sample sizes; activity execution durations (when start timestamps exist); two-cohort comparison. All labeled as descriptive associations. |
-| **Conformance** | Rule CRUD (required, forbidden, A precedes B, max duration, max occurrences, start/end activity), compliant/violating/not-evaluable counts, case-level explanations, “use as filter”, CSV export. |
+| **Conformance** | Rules belong to an object type (created for the lead type). Rule CRUD (required, forbidden, A precedes B, max duration, max occurrences, start/end activity), compliant/violating/not-evaluable counts, case-level explanations, “use as filter”, CSV export. |
 | **Alerts** | Alert rules (duration threshold, rework, conformance violation), “Evaluate rules now”, alert list with open/acknowledged/resolved workflow. |
-| **Model discovery** | Algorithm picker generated from the registry (parameters, defaults, preconditions, limitations, availability), background discovery runs with progress and cancel, native model views (process tree, Petri net, heuristics net, BPMN, POWL, transition system, DECLARE, log skeleton, temporal profile), exports (PTML, PNML, BPMN, JSON, PNG), provenance, formal conformance on the discovered or an approved/uploaded reference model with case diagnostics, run history. |
+| **Model discovery** | Algorithms run on the lead type; the **object-centric Petri net** uses all or selected types. Algorithm picker generated from the registry (parameters, defaults, preconditions, limitations, availability), background discovery runs with progress and cancel, native model views (process tree, Petri net, heuristics net, BPMN, POWL, transition system, DECLARE, log skeleton, temporal profile), exports (PTML, PNML, BPMN, JSON, PNG), provenance, formal conformance on the discovered or an approved/uploaded reference model with case diagnostics, run history. |
 | **Algorithm comparison** | Up to 8 algorithms on one population with an optional case-level train/test split; runtime, representation, size, fitness/precision, soundness, declarative fit, parameters and warnings side by side (no combined score); two models side by side; CSV/JSON export. |
-| **Object-centric** | OCEL 2.0 JSON import with validation findings, unique event/object/relationship counts, object-type filter, object-centric DFG, object timelines and related objects, relationships vs lifetimes, OC Petri net discovery, explicit flattening to a dataset. |
+| **Object relationships** | Object-type graph (events shared between types, distinct object pairs, O2O qualifiers) and lifetimes of the lead type's objects by number of related objects. |
 | **Task mining** | Task-event CSV import (privacy checks), configurable sessionization, task variants, repeated task sequences, application switches, task DFG, links to business cases. |
-| **Datasets** | Load demo data, dataset list with versions and source metadata, analysis settings (completion rule, reference time, display timezone), import findings and quarantine downloads, re-import, deletion with typed-name confirmation. |
+| **Datasets** | Load demo data, dataset list with object types, versions and source metadata, analysis settings per object type (completion rule, reference time) and display timezone, the main object type, import findings and quarantine downloads, re-import, deletion with typed-name confirmation. |
 | **Settings** | Language (English, 한국어, Polski) and animations (follow system / on / off); stored in the database. |
 
-The **filter bar** (top of every analysis page) applies case-level filters — case-start date
+The **filter bar** (top of every analysis page) applies filters to the lead type's objects — case-start date
 range, activity presence/absence, resource, department, variant, duration, rework, completion
 status, conformance result, transition — shown as removable chips and kept in the URL.
 
@@ -307,8 +323,10 @@ are re-imported or re-evaluated.
 
 `GET /api/datasets/{id}/exports/{kind}.{csv|json}` for `cases`, `events`, `variants`,
 `transitions`, `conformance` (with `rule_id`), `alerts`, plus `summary.json` and `events.xes`
-(via PM4Py). Every export accepts the same filter parameters and therefore contains exactly
-the population shown on screen. Text cells beginning with `= + - @`, tab or CR are prefixed
+(via PM4Py). Every export accepts the same filter parameters and lead object type
+(`object_type`) and therefore contains exactly the population shown on screen; event exports
+carry `ocel_event_id`. `…/exports/ocel.json` writes the **whole dataset as OCEL 2.0 JSON** (all
+object types, relationships and attribute histories; re-importable). Text cells beginning with `= + - @`, tab or CR are prefixed
 with `'` in CSV to prevent spreadsheet formula injection.
 
 ### API
@@ -318,15 +336,15 @@ Interactive OpenAPI documentation: <http://127.0.0.1:8000/docs>. Main routes:
 | Area | Routes |
 |---|---|
 | Health/meta | `GET /api/health`, `GET /api/session` (CSRF token), `GET /api/meta/timezones` |
-| Import | `POST /api/uploads`, `GET /api/uploads/{id}`, `POST /api/uploads/{id}/validate`, `GET /api/uploads/{id}/validation-report`, `POST /api/uploads/{id}/import`, `GET /api/jobs/{id}`, `POST /api/demo/load`, `GET /api/sample-data/{name}` |
+| Import | `POST /api/uploads` (CSV, XES, OCEL JSON), `GET /api/uploads/{id}`, `POST /api/uploads/{id}/validate`, `GET /api/uploads/{id}/validation-report`, `POST /api/uploads/{id}/import`, `POST /api/uploads/{id}/xes-options`, `POST /api/uploads/{id}/import-ocel`, `GET /api/jobs/{id}`, `POST /api/demo/load`, `GET /api/sample-data/{name}` |
 | Datasets | `GET /api/datasets`, `GET/PATCH/DELETE /api/datasets/{id}` (`DELETE` needs `confirm_name`), `GET …/validation-report`, `GET …/quarantine` |
-| Analytics | `GET …/overview`, `…/filter-options`, `…/graph`, `…/variants`, `…/cases`, `…/cases/{case_id}`, `…/performance`, `POST …/performance/compare` |
+| Analytics (all take `object_type`) | `GET …/overview`, `…/filter-options`, `…/graph`, `…/variants`, `…/cases`, `…/cases/{case_id}`, `…/performance`, `POST …/performance/compare` |
 | Conformance | `GET/POST …/conformance-rules`, `GET/PUT/DELETE …/conformance-rules/{rid}`, `GET …/conformance-rules/{rid}/evaluation`, `GET …/conformance/summary` |
 | Alerts | `GET/POST …/alert-rules`, `PUT/DELETE …/alert-rules/{rid}`, `POST …/alert-rules/evaluate`, `GET /api/alerts`, `GET /api/alerts/counts`, `PATCH /api/alerts/{id}` |
-| Exports | `GET …/exports/{kind}.{fmt}`, `GET …/exports/events.xes` |
+| Exports | `GET …/exports/{kind}.{fmt}`, `GET …/exports/events.xes`, `GET …/exports/ocel.json` |
 | Preferences | `GET/PUT /api/preferences` |
 | Mining | `GET /api/mining/algorithms`, `POST …/mining/discover`, `POST …/mining/conformance`, `POST …/mining/compare`, `GET /api/mining/runs`, `GET /api/mining/runs/{id}` (+ `/cancel`, `/model`, `/cases`, `/export/{fmt}`), `GET/POST …/reference-models`, `POST …/reference-models/upload` — see [docs/MINING.md](docs/MINING.md) |
-| Object-centric | `GET /api/ocel`, `POST /api/ocel/upload`, `POST /api/ocel/demo`, `GET/DELETE /api/ocel/{id}`, `GET /api/ocel/{id}/stats`, `…/ocdfg`, `…/objects`, `…/objects/{oid}`, `…/relationship-delays`, `…/projection-preview`, `POST …/project`, `POST …/ocpn` |
+| Object-centric | `GET /api/datasets/{id}/ocel` (object model), `…/ocel/stats`, `…/ocel/ocdfg`, `…/ocel/type-graph`, `…/ocel/objects`, `…/ocel/objects/{oid}`, `…/ocel/relationship-delays`, `POST …/ocel/ocpn` — see [docs/OBJECT_CENTRIC.md](docs/OBJECT_CENTRIC.md) |
 | Task mining | `GET /api/tasks`, `POST /api/tasks/preview`, `POST /api/tasks/upload`, `POST /api/tasks/demo`, `GET/DELETE /api/tasks/{id}`, `PUT …/link`, `GET …/summary`, `…/variants`, `…/sequences`, `…/switches`, `…/dfg`, `…/cases` |
 | Guided analysis | `GET /api/guide/questions`, `GET /api/guide/answer` |
 
@@ -348,26 +366,45 @@ State-changing requests need the `X-CSRF-Token` header (the pages send it automa
 * `sample_data/p2p_validation_demo.csv` — 17 rows with intentionally malformed values for
   exercising the validation and quarantine flow (import it with source timezone
   `Europe/Berlin` to also see DST findings).
-* “Load demo data” imports the log through the normal pipeline (source timezone
-  Europe/Berlin, completion from the `case_status` column, fixed reference time
-  2025-06-27 16:00 UTC), adds six example conformance rules and three alert rules, and runs
-  the alert evaluation. All demo screens show a **SYNTHETIC DEMO DATA** badge.
+* “Load demo data” imports the log through the normal pipeline as an object-centric dataset —
+  objects of type `purchase order` (the case column, with amount and category as attribute
+  history) related to `vendor` objects (source timezone Europe/Berlin, completion from the
+  `case_status` column, fixed reference time 2025-06-27 16:00 UTC) — adds six example
+  conformance rules and three alert rules on purchase orders, runs the alert evaluation, and
+  also imports the OCEL order-to-delivery log below as a second dataset. All demo screens show a
+  **SYNTHETIC DEMO DATA** badge.
 * `sample_data/ocel_demo.json` — **synthetic** OCEL 2.0 order-to-delivery log (customers,
   orders, items, packages; 527 events, 261 objects, shared events, changing order status and
-  price), from `scripts/generate_ocel_demo.py`; *Object-centric → Load demo log*.
+  price), from `scripts/generate_ocel_demo.py`; loaded by *Load demo data* (main type `order`).
 * `sample_data/task_events_demo.csv` — **synthetic** task events of six pseudonymous
   accounts-payable clerks (3,968 events) linked to P2P demo case ids, from
   `scripts/generate_task_demo.py`; *Task mining → Load demo*.
 * `tests/fixtures/` — hand-checkable fixtures with expected values in
   [tests/fixtures/README.md](tests/fixtures/README.md): `hand_check.csv` (16 events),
   `mining_fixture.csv` (22 cases, fitting and deviating behaviour), `ocel_small.json`
-  (shared events), `task_events_small.csv` (sessionization).
+  (shared events), `lifecycle.xes` (XES lifecycle and attributes), `task_events_small.csv`
+  (sessionization).
 
 ---
 
 ## Verification
 
 ### Automated (run for this release)
+
+**Object-centric release:** `python -m pytest` → **176 passed**. Every earlier test passes
+unchanged on the object-centric storage (single-type datasets give the same numbers as the
+case-centric model did). New and rewritten: `test_ocel.py` (14: shared events, perspectives,
+unique-event counts and cost, OC-DFG, type graph, object timelines, status history, rules per
+type, per-type settings and main-type change, OCEL validation, OC Petri nets, OCEL export round
+trips), `test_object_import.py` (4: CSV object columns, multi-valued cells, type conflicts, XES
+trace and attribute objects), `test_migration.py` (1: upgrade of a 0006 database with
+case-centric data and an OCEL log, backup file, identical KPIs). The real local database
+(revision 0002, P2P demo) was upgraded on a copy: 600 cases, 5,304 events, 39 variants and
+517/83 completed/incomplete before and after. Checked live with `python -m app --guest`: demo
+load (two datasets), Objects selector on every page, overview object model, object-centric DFG,
+object timelines with navigation across types, Object relationships page, OC Petri net from
+Model discovery, conformance on another type (rules shown as belonging to purchase orders), CSV
+import with object columns and OCEL import through the wizard, and the guest layout.
 
 **XES import:** `python -m pytest` → **167 passed**, including `test_xes.py` (5): conversion and
 suggested mapping, lifecycle pairing vs one row per event, switching and importing with
@@ -532,6 +569,7 @@ server processes against one database is not supported.
 | `0004` | object-centric logs: events, objects, object attributes, E2O and O2O relationships |
 | `0005` | task-event logs and task events |
 | `0006` | uploads remember their source format, original XES file and conversion summary |
+| `0007` | **object-centric datasets**: standard event fields on OCEL events, object types on rules, runs and models, per-type settings; converts every case-centric dataset (type `case`) and standalone OCEL log; keeps `legacy_events`; SQLite copied to `*.bak-0007` first |
 
 Migrations run automatically on start (`alembic upgrade head`); existing databases are upgraded
 in place without data changes.
@@ -554,14 +592,20 @@ mining worker process) and the XES export; review the license before distributin
 
 ## Implemented features (MVP)
 
-* CSV import wizard with preview, mapping suggestions, encoding/delimiter overrides, timestamp
+* **Object-centric data model** throughout: datasets of events and objects of several types
+  with E2O/O2O relationships and attribute histories; every analysis per lead object type with
+  shared events counted once; object-centric DFG, object explorer with related objects,
+  object-type graph, OC Petri nets; OCEL 2.0 JSON export.
+* Import wizard for CSV (object columns, case attributes), XES (trace and attribute objects,
+  lifecycle pairing) and OCEL 2.0 JSON, with preview, mapping suggestions, encoding/delimiter overrides, timestamp
   formats, source/display timezones, explicit DST policies, full validation report, reject or
   quarantine policies, background jobs with progress, re-import as new dataset version,
   persisted source metadata.
 * Downloadable demo and validation-demo files; one-click synthetic demo with example rules.
 * Overview dashboard, directly-follows process explorer, variant explorer, case explorer,
   performance analysis with cohort comparison, rule-based conformance, in-app alerts.
-* Consistent case-level filters across all views and exports; URL-persisted filter chips.
+* Consistent filters on the lead type's objects across all views and exports; URL-persisted filter
+  chips and perspective.
 * CSV/JSON/XES exports; validation report and quarantine downloads.
 * SQLite persistence with Alembic migrations; caching keyed by dataset version, settings
   revision, rule revision and normalized filters.
@@ -578,13 +622,14 @@ mining worker process) and the XES export; review the license before distributin
 * Algorithm comparison with reproducible case-level train/test splits and exports.
 * Background mining runs with cancellation, timeouts, persistent status, history, caching
   and honest progress.
-* Object-centric mining of OCEL 2.0 JSON logs, task mining on exported interaction events,
-  and guided question-driven analysis.
+* Task mining on exported interaction events, guided question-driven analysis, and a read-only
+  guest site.
 
 ## Known limitations
 
-* Case-centric datasets have one case ID per event; object-centric logs have their own,
-  separate analyses (no OCEL conformance checking; OCEL import is JSON only).
+* Conformance rules, alignments and discovery algorithms other than the OC Petri net work on one
+  lead object type at a time (no object-centric conformance checking); OCEL import is JSON only;
+  filters cannot combine conditions on several object types; object attribute values are text.
 * The directly-follows graph on the Process explorer is not a process model; use Model
   discovery for Petri nets, BPMN and other models.
 * Split Miner and Fuzzy Miner are not available; SVG export is not available (PNG only).

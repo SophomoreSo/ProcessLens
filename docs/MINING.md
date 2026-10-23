@@ -9,6 +9,16 @@ mining is described in [OBJECT_CENTRIC.md](OBJECT_CENTRIC.md), task mining in
 Pages: **Model discovery** (`/discovery`) and **Algorithm comparison** (`/compare`).
 All algorithms run in PM4Py **2.7.23.11** inside an isolated worker process.
 
+## Object types
+
+Datasets are object-centric ([OBJECT_CENTRIC.md](OBJECT_CENTRIC.md)). The case-centric
+algorithms, conformance methods and the comparison run on the **lead object type** of the
+request (`object_type`, default the dataset's main type): each object of that type is a case
+whose trace is its related events in time order. The lead type is part of every run's
+provenance, filter snapshot and cache key, so the same algorithm on two object types gives
+two runs. The **object-centric Petri net** (`POST /api/datasets/{id}/ocel/ocpn`, also offered on
+the Model discovery page) uses all or selected object types together.
+
 ## Principles
 
 * **No silent substitution.** If an algorithm or export is not available, it is shown as
@@ -48,7 +58,7 @@ All algorithms run in PM4Py **2.7.23.11** inside an isolated worker process.
 | Genetic Miner | `genetic` | Petri net | — | token replay, alignments, soundness | PNML, JSON, PNG | available (research, randomized) |
 | Split Miner | `split_miner` | — | — | — | — | **unavailable** |
 | Fuzzy Miner | `fuzzy_miner` | — | — | — | — | **unavailable** |
-| Object-centric Petri net | `oc_petri_net` | OC Petri net | — | — | JSON, PNG | available (OCEL logs only) |
+| Object-centric Petri net | `oc_petri_net` | OC Petri net | — | — | JSON, PNG | available (uses several object types) |
 
 `GET /api/mining/algorithms` returns this registry, including availability (decided from what
 is installed), parameter schemas, preconditions, limitations, compatible evaluations and

@@ -1596,5 +1596,6 @@
   "rel.object_pairs": "Pary obiektów",
   "rel.delays": "Relacje i czas życia",
   "rel.delays_for": "Relacje i czas życia obiektów {type}",
-  "rel.ask_guide": "Zapytaj w analizie z przewodnikiem"
+  "rel.ask_guide": "Zapytaj w analizie z przewodnikiem",
+  "export.ocel_json": "OCEL 2.0 JSON (wszystkie typy)"
 }

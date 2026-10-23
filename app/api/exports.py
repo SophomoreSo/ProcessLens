@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
@@ -17,6 +19,7 @@ from app.schemas.filters import FilterSpec
 from app.services import analytics
 from app.i18n import render
 from app.services.conformance import evaluate_rule, explain
+from app.services import ocel_export
 from app.services.ocel import event_attributes
 from app.services.exports import EVENT_EXPORT_COLUMNS, events_for_export, to_csv, to_json, write_xes
 
@@ -49,6 +52,15 @@ def export_xes(background: BackgroundTasks, ds: Dataset = Depends(get_dataset),
     background.add_task(path.unlink, missing_ok=True)
     return FileResponse(path, media_type="application/xml",
                         filename=f"processlens_{ds.id}_v{ds.version}_events.xes", background=background)
+
+
+@router.get("/ocel.json", summary="Export the whole dataset as OCEL 2.0 JSON (all object types; filters do not apply)")
+def export_ocel(ds: Dataset = Depends(get_dataset), db: Session = Depends(get_db)):
+    if not ds.ocel_log_id:
+        raise AppError(422, "empty_population")
+    body = json.dumps(ocel_export.export(db, ds), ensure_ascii=False)
+    return Response(body, media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="processlens_{ds.id}_v{ds.version}.jsonocel"'})
 
 
 @router.get("/{kind}.{fmt}", summary="Export filtered results: cases, events, variants, transitions, "

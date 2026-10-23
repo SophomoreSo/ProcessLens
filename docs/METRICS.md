@@ -3,6 +3,20 @@
 Precise definitions of every metric, filter and rule. The implementation lives
 in `app/services/` and is pinned down by the tests in `tests/`.
 
+## Cases are objects of the lead type
+
+Datasets are object-centric ([OBJECT_CENTRIC.md](OBJECT_CENTRIC.md)). Every figure below is
+computed for one **lead object type**: a *case* is an object of that type, and its events are
+the events related to it, in time order. An event related to several objects of the lead type
+belongs to each of their cases. Therefore:
+
+* **Event count** counts **unique events**; the overview also shows the **object-event rows**
+  (one per object and event) when the two differ.
+* **Total cost** sums event costs over **unique events**. The cost of a single case (object) is
+  the sum over its events, so the costs of objects that share events are not additive.
+* All other case metrics (durations, variants, rework, transitions, completion, conformance
+  results, filters) are per object exactly as defined below.
+
 ## Event ordering
 
 * All timestamps are normalized to **UTC** at import. Values with an explicit
@@ -21,7 +35,8 @@ in `app/services/` and is pinned down by the tests in `tests/`.
 | Metric | Definition |
 |---|---|
 | Case count | Number of distinct case IDs in the population. |
-| Event count | Number of retained (valid, non-quarantined) events of those cases. |
+| Event count | Number of retained (valid, non-quarantined) unique events of those cases (an event shared by several cases counts once). |
+| Object-event rows | Number of (case, event) pairs; equals the event count when no event is shared by two cases of the lead type. |
 | Activity count | Number of distinct activity names among those events. |
 | Variant | The ordered tuple of activity names of a case. Its ID is the first 12 hex characters of SHA-1 over the names joined by U+001F. |
 | Variant frequency | Cases following the variant, and that number divided by the population case count. Variants are ranked by case count (desc), then label (asc); cumulative share follows this rank. |

@@ -1596,5 +1596,6 @@
   "rel.object_pairs": "Object pairs",
   "rel.delays": "Relationships and lifetimes",
   "rel.delays_for": "Relationships and lifetimes of {type} objects",
-  "rel.ask_guide": "Ask in guided analysis"
+  "rel.ask_guide": "Ask in guided analysis",
+  "export.ocel_json": "OCEL 2.0 JSON (all types)"
 }

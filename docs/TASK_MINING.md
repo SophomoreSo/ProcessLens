@@ -68,8 +68,9 @@ collapsed).
   that had one.
 * **Business cases** (`/cases`, optional `dataset_id`): per `business_case_id`, sessions,
   events, users, applications and explicit duration; with a linked dataset
-  (`PUT /api/tasks/{id}/link`), whether the case exists there, with a link to the case
-  explorer. Deleting the dataset removes the link.
+  (`PUT /api/tasks/{id}/link`), whether an object with that id exists there (of any object
+  type; the type is shown), with a link to that object in its own perspective.
+  Deleting the dataset removes the link.
 
 ## Time
 

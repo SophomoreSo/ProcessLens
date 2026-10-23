@@ -1,116 +1,123 @@
-# Object-centric process mining (OCEL 2.0)
+# The object-centric data model
 
-Page: **Object-centric** (`/ocel`). Tables: `ocel_logs`, `ocel_events`, `ocel_objects`,
-`ocel_object_attributes`, `ocel_e2o`, `ocel_o2o` (migration `0004`). Object-centric logs are
-stored separately from case-centric datasets: an event can relate to many objects of many
-types and is stored **once**.
+Every ProcessLens dataset is **object-centric**: it is an event log in the sense of OCEL 2.0,
+with events, objects of several types, event-to-object (E2O) and object-to-object (O2O)
+relationships, and object attribute values that change over time. Analyses look at a
+dataset through a **lead object type** (the *perspective*): its objects play the role of
+cases. Every page can switch the lead type; object-centric views (OC-DFG across types,
+object-type graph, OC Petri nets) look at all types at once.
 
-## Import and validation
+## Storage
 
-`POST /api/ocel/upload` (multipart `file`, optional `name`) accepts **OCEL 2.0 JSON**
-(`.json`, `.jsonocel`). XML and SQLite OCEL files are not supported. The file is validated
-completely before anything is written; if there is any error, nothing is stored and the
-response (`422`) lists every finding with severity, element and a translated message.
-
-Supported constructs:
-
-| Construct | Handling |
+| Table | Content |
 |---|---|
-| `objectTypes`, `eventTypes` with typed attributes (`string`, `time`, `integer`, `float`, `boolean`) | stored; other attribute types → warning, stored as string |
-| `objects` with `id`, `type`, `attributes` (`name`, `value`, `time`) | stored; each attribute value keeps its validity time (changing attributes); attributes without `time` are static |
-| object `relationships` (`objectId`, `qualifier`) | stored as object-to-object (O2O) relationships |
-| `events` with `id`, `type`, `time`, `attributes` | stored once |
-| event `relationships` (`objectId`, `qualifier`) | stored as event-to-object (E2O) relationships |
-| any other key | warning *not supported and ignored* (never silently accepted) |
+| `datasets` | the workspace entry: name, version, settings revision, display timezone, import provenance, **main object type**, analysis settings of the main type, `object_type_settings` for the other types, `ocel_log_id` |
+| `ocel_logs` | object and event types (with typed attributes), counts, import findings |
+| `ocel_events` | one row per event, stored **once**: id, type, time (UTC), source position, attributes, and the standard fields `start_ts`, `resource`, `department`, `cost`, `source_row` |
+| `ocel_objects` | object id and type (an id has exactly one type) |
+| `ocel_object_attributes` | attribute values with their validity time and, if a source row reported them, that event |
+| `ocel_e2o` / `ocel_o2o` | relationships with qualifiers |
 
-Errors: missing top-level sections, duplicate type names, objects/events without id,
-duplicate ids, undeclared object or event types, invalid timestamps, relationships to unknown
-objects, no valid events. Warnings: undeclared attributes, values not matching the declared
-type, duplicate relationships, timestamps without offset (read as UTC), ignored keys.
-Info: objects without any event.
+Migration `0007` converted every pre-existing case-centric dataset into this model (one object
+type `case`; event ids, order, standard fields, attributes and the case status as attribute
+history kept; version and settings revision unchanged) and every standalone OCEL log into a
+dataset. The old `events` table is kept as `legacy_events`; SQLite databases are copied to
+`processlens.db.bak-0007` before the conversion.
 
-`POST /api/ocel/demo` imports `sample_data/ocel_demo.json` — a **synthetic** order-to-delivery
-log (customers, orders, items, packages; 527 events, 261 objects; packages mix items of
-different orders; orders change status and price over time), generated deterministically by
-`scripts/generate_ocel_demo.py`.
+## Perspectives (lead object type)
 
-## Counting rules
+Every analysis endpoint takes `object_type` (default: the dataset's main type); the pages keep
+it in the URL and offer it as the **Objects** selector in the top bar.
 
-| Count | Definition |
+The view of a dataset through type *T* is built by flattening: every object of type *T*
+becomes a case whose events are the events related to it, ordered by timestamp, then source
+position. An event related to several objects of type *T* therefore appears in each of their
+timelines. To keep the numbers honest:
+
+| Figure | Rule |
 |---|---|
-| Unique events | each event once, however many objects it relates to |
-| Objects | distinct object ids |
-| Event-object relationships | one per (event, object, qualifier) link |
-| Object-object relationships | one per (source, target, qualifier) link |
-| Shared events | events related to two or more objects (within the current type selection) |
-| Object transitions (OC-DFG) | consecutive event pairs per object of one type |
-| Unique event pairs (OC-DFG) | distinct (event, next event) pairs behind those transitions |
-| Event cost (unique events) | sum of the `cost` event attribute over unique events |
+| Objects (cases) | objects of type *T* with at least one event |
+| Events | **unique events** related to an object of type *T* — each counted once |
+| Object-event rows | (object, event) pairs; shown next to events when they differ |
+| Total cost | sum of event costs over **unique events** |
+| Cost of an object | sum of the costs of the events the object took part in (a shared event's cost appears in every one of its objects, so object costs are not additive) |
+| Variants, durations, rework, transitions, filters | per object, exactly as for cases |
 
-Example from `tests/fixtures/ocel_small.json`: events e6 and e8 are shared by package p1 and
-items i2 and i3. For object type *item*, *send package → deliver package* has **2 object
-transitions** (i2 and i3) but **1 unique event pair** (e6 → e8). The cost over unique events
-is 33; summing over event-object relationships would wrongly give 78.
+Settings that make sense per type — completion rule, end activities, completed/open status
+values, reference time — are stored per object type (the main type's in the dataset's own
+fields; the main type can be changed, and its settings move with it).
+**Conformance rules, alert rules, mining runs and approved reference models belong to one
+object type**: rules are created for the current lead type, listed with their type, and
+evaluated on the objects of that type; a filter cannot use a rule of another type; alerts
+link to the object in its own perspective. Mining runs record the lead type in their
+provenance, snapshot and cache key.
 
-## Object-type filtering
+Exports of cases, events, variants, transitions and XES use the lead type (event exports
+carry `ocel_event_id` so copies of shared events are identifiable). The **OCEL 2.0 JSON**
+export (`GET /api/datasets/{id}/exports/ocel.json`) writes the whole dataset — all types,
+relationships and attribute histories — and imports again with identical figures (tested for
+an OCEL-imported and a CSV-imported dataset).
 
-Selecting object types keeps the events related to at least one object of a selected type
-and the relationships of those types. Events stay single events; counts are recomputed for
-the selection (shared events counts only sharing within the selection).
+## Import
 
-## Analyses
+All formats go through the import wizard (`/import`) and run as import jobs (progress,
+re-import as a new dataset version).
 
-* **Statistics** (`GET /api/ocel/{id}/stats?object_type=…`): the counts above, per object
-  type (objects, unique events, E2O links, events with several objects of the type, median
-  events per object), per event type, O2O relationships by qualifier.
-* **Object-centric DFG** (`GET …/ocdfg`): nodes are event types with unique-event counts;
-  edges are per object type with object transitions, objects, unique event pairs and median
-  elapsed time. Rendered with one colour per object type.
-* **Objects** (`GET …/objects`, `GET …/objects/{object_id}`): paged object list; object
-  timeline (events in time order, qualifiers, the other objects sharing each event),
-  attribute history with validity times, related objects via O2O (both directions) and via
-  shared events. Related objects are links, so one can navigate from object to object.
-* **Relationships and delays** (`GET …/relationship-delays?object_type=…`): lifetimes
-  (first to last event) of objects of a type, grouped by how many related objects of each
-  other type they have (0, 1, 2, 3+), via shared events and via O2O qualifiers. Descriptive
-  only.
+**CSV.** Each row is one event. The *case* column identifies the event's object of the lead
+type, whose type you name (default `case`). Every other column gets a role:
 
-## Object-centric Petri net
+| Role | Stored as |
+|---|---|
+| event attribute | an attribute of the event |
+| attribute of the case object | the case object's attribute history (a value is recorded when it first appears or changes, at the event's time) |
+| related objects | objects of a type you name; the event is related to them (qualifier = column name). An optional separator splits multi-valued cells (`I1;I2`) |
+| do not import | — |
 
-`POST /api/ocel/{id}/ocpn` (`object_types`, `params`, `timeout_s`, `force`) starts a mining run
-(kind `ocpn`) that calls PM4Py's `discover_oc_petri_net` in the worker process. Parameters:
-`inductive_miner_variant` (`im`, `imf`, `imd`; default `im`) and `noise_threshold` (only with
-`imf`). The model is serialized with places per object type, initial/final token counts per
-place (object ids are not exposed), visible and silent transitions, and arcs with object
-type and a *variable* flag (activities that usually involve several objects of the type).
-PM4Py discovers one net per object type by internal flattening and merges them on shared
-activities; interactions between types are not checked for soundness, and no conformance
-method is offered for OC Petri nets. Runs are cached, cancellable and time-limited like all
-mining runs, keyed by log id, log version, source SHA-256, object types and parameters.
-Export: application JSON and PNG.
+The case status column becomes the case object's `status` attribute history; completion by
+case status uses its latest value. Validation reports empty object cells and values that look
+multi-valued without a separator, and **rejects** ids that would be used with two object types.
 
-## Flattening to a case-centric dataset
+**XES.** Converted to the same table (see [MINING.md](MINING.md) and the README for lifecycle
+handling): `case:concept:name` identifies the trace object (type of your choice), trace
+attributes (`case:*`) are suggested as attributes of that object, and event attributes such as
+`org:resource` can be turned into objects, so events are shared between traces and resources.
 
-`GET …/projection-preview?object_type=…` reports what flattening would do;
-`POST …/project` (`object_type`, optional `dataset_name`, **`acknowledge_flattening: true`
-required**) creates a normal case-centric dataset through the import pipeline:
+**OCEL 2.0 JSON** (`.json`, `.jsonocel`) is validated completely on upload; with any error
+nothing is staged and the findings are returned. Supported constructs: `objectTypes`,
+`eventTypes` (typed attributes), `objects` (attributes with `time`, O2O `relationships` with
+qualifiers), `events` (attributes, E2O `relationships` with qualifiers). Other keys, untyped
+values, naive times (read as UTC) and duplicates are reported. You then choose the main object
+type (the type related to the most events is suggested) and which event attributes are the
+resource, department, cost and start time (suggested from `org:resource`, `org:group`,
+`cost:total`/`cost`, `start_timestamp`). Attributes stay with the events as well. Cost values
+that are not numbers and start times that are unreadable or later than the event are left
+empty and counted.
 
-* each object of the chosen type becomes a case;
-* an event related to several objects of that type is **copied** into each of their cases;
-  events not related to the type are dropped; relations to other types are lost;
-* every row keeps `ocel_event_id`, `qualifier` and `objects_sharing_event` attributes so
-  copies of the same event remain identifiable;
-* event costs are **not** mapped to the cost field (they would be counted once per copy);
-* the dataset description records the source log, object type and the number of duplicated
-  rows.
+## Object-centric views
 
-The UI shows the duplication warning and requires a confirmation checkbox.
+| Page / endpoint | What it shows |
+|---|---|
+| Overview → *Object model* (`GET …/ocel/stats`) | per type: objects, unique events, E2O links, events with several objects of the type; shared events; O2O; unique-event cost |
+| Process explorer → *Object-centric* (`GET …/ocel/ocdfg`) | nodes = event types (unique events); edges per object type with object transitions, objects, unique event pairs and median elapsed time; type selection |
+| Objects (`GET …/cases/{id}`, `GET …/ocel/objects/{id}`) | the object's timeline with the other objects of each event, attribute history, related objects via O2O and shared events — every object links to its own perspective |
+| Object relationships (`GET …/ocel/type-graph`, `…/relationship-delays`) | object-type graph (shared events and distinct object pairs between types, O2O by qualifier); lifetimes of the lead type's objects grouped by the number of related objects of each other type |
+| Model discovery → *Object-centric Petri net* (`POST …/ocel/ocpn`) | PM4Py's OC Petri net over all or selected types (places per type, variable arcs, token counts per place) as a mining run |
+
+## Limitations
+
+* No object-centric conformance checking: rules and alignments are evaluated per lead type.
+* OCEL XML and SQLite are not imported (JSON only).
+* Filters apply to the lead type's objects; conditions combining several object types
+  (“orders whose items …”) are not available yet.
+* Object attribute values are stored as text.
 
 ## Tests
 
-`tests/test_ocel.py` (10 tests) with `tests/fixtures/ocel_small.json` (expected values in
-`tests/fixtures/README.md`): persistence of shared events once, unique/E2O/O2O/shared counts,
-cost over unique events, type filtering, OC-DFG object transitions vs unique event pairs,
-object timelines, attribute history and related objects, relationship groups, validation
-errors and warnings, projection acknowledgement and event identity, OCPN run (places per
-type, initial tokens per type, variable arcs, caching, parameter validation) and deletion.
+`tests/test_ocel.py` (14), `tests/test_object_import.py` (4) and `tests/test_migration.py` (1)
+with the fixtures `ocel_small.json`, `lifecycle.xes` and inline CSVs: shared events stored and
+counted once, perspectives with unique events, object-event rows and unique-event cost, OC-DFG
+object transitions vs unique event pairs, object-type graph, object timelines and attribute
+histories, completion from status history, rules per type and their filters, per-type
+settings and main-type change, CSV object columns (multi-valued cells, type conflicts), XES
+trace and attribute objects, OCEL validation findings, OC Petri net runs, OCEL export round
+trips, demo datasets and the upgrade of a pre-0007 database with identical KPIs.

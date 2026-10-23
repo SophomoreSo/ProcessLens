@@ -205,3 +205,39 @@ def test_settings_per_object_type_and_main_type_change(client):
     assert again["status_counts"]["completed"] == 2  # item settings moved into the main fields
     assert client.get(f"/api/datasets/{ds}/conformance-rules/{rule['id']}").json()["object_type"] == "order"
     assert client.patch(f"/api/datasets/{ds}", json={"main_object_type": "car"}).status_code == 422
+
+
+def test_ocel_export_round_trip(client):
+    ds = _dataset(client)
+    r = client.get(f"/api/datasets/{ds}/exports/ocel.json")
+    assert r.status_code == 200
+    data = r.json()
+    assert {t["name"] for t in data["objectTypes"]} == {"order", "item", "package"}
+    e1 = next(e for e in data["events"] if e["id"] == "e1")
+    assert {a["name"] for a in e1["attributes"]} == {"cost"}  # cost came from that attribute: not duplicated
+    again = import_ocel(client, r.content, "order", {"cost": "cost"}, name="again.jsonocel")["dataset_id"]
+    a = client.get(f"/api/datasets/{ds}/ocel/stats").json()
+    b = client.get(f"/api/datasets/{again}/ocel/stats").json()
+    for key in ("unique_events", "unique_objects", "e2o_relationships", "o2o_relationships", "shared_events",
+                "cost_total_unique_events"):
+        assert a[key] == b[key], key
+    o1 = client.get(f"/api/datasets/{again}/ocel/objects/o1").json()
+    assert [(x["name"], x["value"]) for x in o1["attributes"]] == [("status", "placed"), ("status", "shipped")]
+
+
+def test_csv_dataset_exports_standard_fields_as_ocel(client, hand_dataset):
+    data = client.get(f"/api/datasets/{hand_dataset}/exports/ocel.json").json()
+    e = next(e for e in data["events"] if e["type"] == "A")
+    names = {a["name"] for a in e["attributes"]}
+    assert {"org:resource", "org:group", "cost:total"} <= names
+    assert {t["name"] for t in data["objectTypes"]} == {"case"}
+    case = next(o for o in data["objects"] if o["id"] == "C1")
+    assert case["attributes"][0]["name"] == "status"
+    job = import_ocel(client, json.dumps(data).encode(), "case", {"resource": "org:resource", "department": "org:group",
+                                                                  "cost": "cost:total"}, name="hand.json",
+                      completion={"mode": "case_status", "completed_status_values": ["Completed"],
+                                  "open_status_values": ["Open"]}, reference_time="2024-01-06T00:00:00Z")
+    a = client.get(f"/api/datasets/{hand_dataset}/overview").json()["data"]
+    b = client.get(f"/api/datasets/{job['dataset_id']}/overview").json()["data"]
+    for key in ("case_count", "event_count", "variant_count", "rework_case_count", "status_counts", "total_cost"):
+        assert a[key] == b[key], key

@@ -80,7 +80,8 @@ async function render() {
   try {
     last = await api(`/api/datasets/${ds}/overview`, { params: new URLSearchParams(location.search) });
   } catch (err) { return showError(root, err); }
-  clear($("#overview-exports"), exportLinks(ds, [["summary", "json", t("export.summary_json")], ["cases", "csv", t("export.cases_csv")], ["events", "csv", t("export.events_csv")]]));
+  clear($("#overview-exports"), exportLinks(ds, [["summary", "json", t("export.summary_json")], ["cases", "csv", t("export.cases_csv")],
+    ["events", "csv", t("export.events_csv")], ["ocel", "json", t("export.ocel_json")]]));
   const d = last.data;
   if (d.case_count === 0) {
     return clear(root, h("div", { class: "card" }, h("div", { class: "state" }, h("div", { class: "title" }, t("empty.no_match.title")),

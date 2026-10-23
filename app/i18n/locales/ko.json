@@ -1596,5 +1596,6 @@
   "rel.object_pairs": "객체 쌍",
   "rel.delays": "관계와 수명",
   "rel.delays_for": "{type} 객체의 관계와 수명",
-  "rel.ask_guide": "가이드 분석에서 묻기"
+  "rel.ask_guide": "가이드 분석에서 묻기",
+  "export.ocel_json": "OCEL 2.0 JSON (모든 유형)"
 }
