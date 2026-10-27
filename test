@@ -1,9 +1,12 @@
+import math
 import sys
 import time
 from enum import Enum
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import (
+    Qt, QThread, QTimer, QVariantAnimation, QPointF, QRectF, pyqtSignal,
+)
+from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QHBoxLayout,
     QVBoxLayout, QProgressBar, QMessageBox, QGraphicsDropShadowEffect,
@@ -15,17 +18,17 @@ from PyQt5.QtWidgets import (
 # Each must return (success: bool, message: str) or raise an exception.
 # ---------------------------------------------------------------------------
 def connect_enportal():
-    time.sleep(1.5)
+    time.sleep(2)
     return True, "Connected to EnPortal"
 
 
 def connect_gateone():
-    time.sleep(1.5)
+    time.sleep(2)
     return True, "Connected to GateOne"
 
 
 def check_db_connection():
-    time.sleep(1.5)
+    time.sleep(2)
     return True, "Database connection verified"
 
 
@@ -33,231 +36,67 @@ def check_db_connection():
 # CSS (Qt Style Sheet)
 # ---------------------------------------------------------------------------
 STYLESHEET = """
-* {
-    font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
-}
+QWidget#Root { background: #F4F6FA; }
+QLabel { color: #1F2937; }
 
-/* ---------- Window ---------- */
-QWidget#Root {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #0B1120, stop:0.55 #151A3A, stop:1 #241447);
-}
-QLabel {
-    color: #E2E8F0;
-    background: transparent;
-}
+QLabel#HeaderTitle { font-size: 20px; font-weight: 600; }
+QLabel#HeaderSubtitle { font-size: 13px; color: #6B7280; }
 
-/* ---------- Header ---------- */
-QLabel#Eyebrow {
-    color: #A78BFA;
-    font-size: 11px;
-    font-weight: 700;
-}
-QLabel#HeaderTitle {
-    color: #F8FAFC;
-    font-size: 26px;
-    font-weight: 700;
-}
-QLabel#HeaderSubtitle {
-    color: #94A3B8;
-    font-size: 13px;
-}
-
-/* ---------- Step cards ---------- */
 QFrame#StepRow {
-    background: rgba(255, 255, 255, 8);
-    border: 1px solid rgba(255, 255, 255, 22);
-    border-radius: 14px;
-}
-QFrame#StepRow:hover {
-    background: rgba(255, 255, 255, 13);
-    border: 1px solid rgba(255, 255, 255, 40);
-}
-QFrame#StepRow[status="running"] {
-    background: rgba(99, 102, 241, 18);
-    border: 1px solid rgba(129, 140, 248, 160);
-}
-QFrame#StepRow[status="passed"] {
-    background: rgba(16, 185, 129, 16);
-    border: 1px solid rgba(52, 211, 153, 140);
-}
-QFrame#StepRow[status="skipped"] {
-    background: rgba(245, 158, 11, 14);
-    border: 1px solid rgba(251, 191, 36, 140);
-}
-QFrame#StepRow[status="failed"] {
-    background: rgba(239, 68, 68, 16);
-    border: 1px solid rgba(248, 113, 113, 160);
-}
-
-/* ---------- Number / check badge ---------- */
-QLabel#Badge {
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 14);
-    border: 1px solid rgba(255, 255, 255, 35);
-    color: #CBD5E1;
-    font-size: 16px;
-    font-weight: 700;
-}
-QLabel#Badge[status="running"] {
-    border: none;
-    color: #FFFFFF;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #4F46E5, stop:1 #8B5CF6);
-}
-QLabel#Badge[status="passed"] {
-    border: none;
-    color: #FFFFFF;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #059669, stop:1 #34D399);
-}
-QLabel#Badge[status="skipped"] {
-    border: none;
-    color: #FFFFFF;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #D97706, stop:1 #FBBF24);
-}
-QLabel#Badge[status="failed"] {
-    border: none;
-    color: #FFFFFF;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #DC2626, stop:1 #F87171);
-}
-
-/* ---------- Step text ---------- */
-QLabel#StepTitle {
-    color: #F8FAFC;
-    font-size: 15px;
-    font-weight: 600;
-}
-QLabel#StepDesc {
-    color: #94A3B8;
-    font-size: 12px;
-}
-QLabel#StepDesc[status="running"] { color: #A5B4FC; }
-QLabel#StepDesc[status="passed"]  { color: #6EE7B7; }
-QLabel#StepDesc[status="skipped"] { color: #FCD34D; }
-QLabel#StepDesc[status="failed"]  { color: #FCA5A5; }
-
-/* ---------- Status chip ---------- */
-QLabel#Chip {
-    font-size: 10px;
-    font-weight: 700;
-    padding: 4px 10px;
+    background: #FFFFFF;
+    border: 1px solid #E3E7EE;
     border-radius: 10px;
-    color: #94A3B8;
-    background: rgba(148, 163, 184, 30);
 }
-QLabel#Chip[status="running"] { color: #C7D2FE; background: rgba(99, 102, 241, 70); }
-QLabel#Chip[status="passed"]  { color: #6EE7B7; background: rgba(16, 185, 129, 50); }
-QLabel#Chip[status="skipped"] { color: #FDE68A; background: rgba(245, 158, 11, 50); }
-QLabel#Chip[status="failed"]  { color: #FECACA; background: rgba(239, 68, 68, 60); }
+QFrame#StepRow[status="running"] { border: 1px solid #93C5FD; }
+QFrame#StepRow[status="passed"]  { border: 1px solid #86EFAC; }
+QFrame#StepRow[status="skipped"] { border: 1px solid #FCD34D; }
+QFrame#StepRow[status="failed"]  { border: 1px solid #FCA5A5; }
 
-/* ---------- Buttons ---------- */
+QLabel#StepTitle { font-size: 14px; font-weight: 600; }
+QLabel#StepStatus { font-size: 12px; color: #6B7280; }
+QLabel#StepStatus[status="running"] { color: #2563EB; }
+QLabel#StepStatus[status="passed"]  { color: #15803D; }
+QLabel#StepStatus[status="skipped"] { color: #B45309; }
+QLabel#StepStatus[status="failed"]  { color: #DC2626; }
+
 QPushButton {
-    color: #FFFFFF;
-    border: none;
-    border-radius: 10px;
-    padding: 9px 18px;
     font-size: 13px;
     font-weight: 600;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #6366F1, stop:1 #8B5CF6);
+    border-radius: 6px;
+    padding: 8px 16px;
 }
-QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #818CF8, stop:1 #A78BFA);
-}
-QPushButton:pressed {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #4F46E5, stop:1 #7C3AED);
-}
-QPushButton:disabled {
-    background: rgba(255, 255, 255, 10);
-    color: rgba(255, 255, 255, 70);
-}
+QPushButton#GoButton { background: #2563EB; color: #FFFFFF; border: none; }
+QPushButton#GoButton:hover { background: #1D4ED8; }
+QPushButton#GoButton:pressed { background: #1E40AF; }
+QPushButton#GoButton:disabled { background: #C7D2FE; color: #EEF2FF; }
 
 QPushButton#SkipButton, QPushButton#ResetButton {
-    background: transparent;
-    color: #CBD5E1;
-    border: 1px solid rgba(255, 255, 255, 45);
+    background: #FFFFFF;
+    color: #374151;
+    border: 1px solid #D1D5DB;
 }
-QPushButton#SkipButton:hover, QPushButton#ResetButton:hover {
-    background: rgba(255, 255, 255, 16);
-    border: 1px solid rgba(255, 255, 255, 80);
-    color: #FFFFFF;
-}
-QPushButton#SkipButton:pressed, QPushButton#ResetButton:pressed {
-    background: rgba(255, 255, 255, 26);
-}
+QPushButton#SkipButton:hover, QPushButton#ResetButton:hover { background: #F3F4F6; }
 QPushButton#SkipButton:disabled, QPushButton#ResetButton:disabled {
-    background: transparent;
-    color: rgba(255, 255, 255, 50);
-    border: 1px solid rgba(255, 255, 255, 15);
+    color: #9CA3AF;
+    border: 1px solid #E5E7EB;
 }
 
 QPushButton#StartButton {
-    padding: 12px 38px;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 700;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #8B5CF6, stop:1 #EC4899);
-}
-QPushButton#StartButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #A78BFA, stop:1 #F472B6);
-}
-QPushButton#StartButton:pressed {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #7C3AED, stop:1 #DB2777);
-}
-QPushButton#StartButton:disabled {
-    background: rgba(255, 255, 255, 12);
-    color: rgba(255, 255, 255, 60);
-}
-
-/* ---------- Footer ---------- */
-QFrame#Divider {
-    background: rgba(255, 255, 255, 20);
-}
-QLabel#ProgressLabel {
-    color: #94A3B8;
-    font-size: 12px;
-}
-QLabel#ProgressCount {
-    color: #F8FAFC;
-    font-size: 13px;
-    font-weight: 600;
-}
-QProgressBar {
-    background: rgba(255, 255, 255, 15);
+    background: #16A34A;
+    color: #FFFFFF;
     border: none;
-    border-radius: 4px;
+    padding: 10px 32px;
+    font-size: 14px;
 }
-QProgressBar::chunk {
-    border-radius: 4px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #8B5CF6, stop:1 #EC4899);
-}
+QPushButton#StartButton:hover { background: #15803D; }
+QPushButton#StartButton:pressed { background: #166534; }
+QPushButton#StartButton:disabled { background: #D1D5DB; color: #F9FAFB; }
 
-/* ---------- Dialogs & tooltips ---------- */
-QMessageBox {
-    background: #151A3A;
-}
-QMessageBox QLabel {
-    color: #E2E8F0;
-    font-size: 13px;
-}
-QMessageBox QPushButton {
-    min-width: 80px;
-}
-QToolTip {
-    background: #1E1B4B;
-    color: #E2E8F0;
-    border: 1px solid rgba(255, 255, 255, 40);
-    padding: 6px;
-}
+QProgressBar { background: #E5E7EB; border: none; border-radius: 3px; }
+QProgressBar::chunk { background: #16A34A; border-radius: 3px; }
+
+QLabel#ProgressLabel { font-size: 12px; color: #6B7280; }
+QFrame#Divider { background: #E3E7EE; }
 """
 
 
@@ -269,10 +108,18 @@ def repolish(widget):
     widget.update()
 
 
-def add_letter_spacing(widget, spacing=1.2):
-    font = widget.font()
-    font.setLetterSpacing(QFont.AbsoluteSpacing, spacing)
-    widget.setFont(font)
+def clamp(x):
+    return max(0.0, min(1.0, x))
+
+
+def ease_out_back(x):
+    c1 = 1.70158
+    c3 = c1 + 1
+    return 1 + c3 * (x - 1) ** 3 + c1 * (x - 1) ** 2
+
+
+def ease_out_cubic(x):
+    return 1 - (1 - x) ** 3
 
 
 class Status(Enum):
@@ -283,15 +130,159 @@ class Status(Enum):
     FAILED = "failed"
 
 
-CHIP_TEXT = {
-    Status.PENDING: "PENDING",
-    Status.RUNNING: "RUNNING",
-    Status.PASSED: "PASSED",
-    Status.SKIPPED: "SKIPPED",
-    Status.FAILED: "FAILED",
-}
+# ---------------------------------------------------------------------------
+# Animated step indicator
+# ---------------------------------------------------------------------------
+class StepIndicator(QWidget):
+    DOT_COUNT = 8
+    SPIN_INTERVAL_MS = 110
+    FINISH_DURATION_MS = 700
+
+    FILL = {
+        Status.PASSED: QColor("#16A34A"),
+        Status.SKIPPED: QColor("#F59E0B"),
+        Status.FAILED: QColor("#DC2626"),
+    }
+    SPINNER_COLOR = QColor("#2563EB")
+
+    def __init__(self, number, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(36, 36)
+        self.number = number
+        self.state = Status.PENDING
+
+        # Loading dots
+        self._spin_step = 0
+        self._spin_timer = QTimer(self)
+        self._spin_timer.setInterval(self.SPIN_INTERVAL_MS)
+        self._spin_timer.timeout.connect(self._advance_spinner)
+
+        # Finish animation (badge pop + mark drawing)
+        self._progress = 1.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self._anim.setDuration(self.FINISH_DURATION_MS)
+        self._anim.valueChanged.connect(self._on_anim_value)
+
+    def set_state(self, state):
+        self.state = state
+        self._anim.stop()
+
+        if state is Status.RUNNING:
+            self._spin_step = 0
+            self._spin_timer.start()
+        else:
+            self._spin_timer.stop()
+
+        if state in self.FILL:
+            self._progress = 0.0
+            self._anim.start()
+        else:
+            self._progress = 1.0
+        self.update()
+
+    def _advance_spinner(self):
+        self._spin_step = (self._spin_step + 1) % self.DOT_COUNT
+        self.update()
+
+    def _on_anim_value(self, value):
+        self._progress = float(value)
+        self.update()
+
+    # --- painting ---------------------------------------------------------
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(2, 2, -2, -2)
+        center = rect.center()
+        radius = rect.width() / 2
+
+        if self.state is Status.PENDING:
+            self._paint_pending(p, rect, center, radius)
+        elif self.state is Status.RUNNING:
+            self._paint_spinner(p, center, radius)
+        else:
+            self._paint_finished(p, rect, center, radius)
+        p.end()
+
+    def _paint_pending(self, p, rect, center, radius):
+        p.setPen(QPen(QColor("#D5DBE5"), 1.5))
+        p.setBrush(QColor("#F3F5F9"))
+        p.drawEllipse(center, radius, radius)
+
+        font = QFont(self.font())
+        font.setBold(True)
+        font.setPointSizeF(10.5)
+        p.setFont(font)
+        p.setPen(QColor("#6B7280"))
+        p.drawText(rect, Qt.AlignCenter, str(self.number))
+
+    def _paint_spinner(self, p, center, radius):
+        p.setPen(Qt.NoPen)
+        ring = radius * 0.62
+        dot = radius * 0.15
+        n = self.DOT_COUNT
+        for i in range(n):
+            angle = -math.pi / 2 + 2 * math.pi * i / n
+            age = (self._spin_step - i) % n           # 0 = leading dot
+            fade = age / n
+            color = QColor(self.SPINNER_COLOR)
+            color.setAlphaF(1.0 - fade * 0.85)
+            size = dot * (1.0 - fade * 0.4)
+            pos = QPointF(center.x() + math.cos(angle) * ring,
+                          center.y() + math.sin(angle) * ring)
+            p.setBrush(color)
+            p.drawEllipse(pos, size, size)
+
+    def _paint_finished(self, p, rect, center, radius):
+        t = self._progress
+        circle_t = ease_out_back(clamp(t / 0.45)) if t < 0.45 else 1.0
+        mark_t = ease_out_cubic(clamp((t - 0.35) / 0.65))
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(self.FILL[self.state])
+        r = radius * max(0.0, circle_t)
+        p.drawEllipse(center, r, r)
+
+        if mark_t <= 0:
+            return
+
+        pen = QPen(QColor("#FFFFFF"), 2.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+
+        def pt(fx, fy):
+            return QPointF(rect.left() + fx * rect.width(),
+                           rect.top() + fy * rect.height())
+
+        if self.state is Status.FAILED:
+            self._draw_partial(p, [pt(0.35, 0.35), pt(0.65, 0.65)], clamp(mark_t * 2))
+            self._draw_partial(p, [pt(0.65, 0.35), pt(0.35, 0.65)], clamp(mark_t * 2 - 1))
+        else:
+            self._draw_partial(p, [pt(0.28, 0.52), pt(0.44, 0.67), pt(0.73, 0.36)], mark_t)
+
+    @staticmethod
+    def _draw_partial(p, points, t):
+        """Draw a polyline up to fraction t of its total length."""
+        if t <= 0:
+            return
+        segments = list(zip(points, points[1:]))
+        lengths = [math.hypot(b.x() - a.x(), b.y() - a.y()) for a, b in segments]
+        remaining = sum(lengths) * t
+        path = QPainterPath(points[0])
+        for (a, b), length in zip(segments, lengths):
+            if remaining <= 0:
+                break
+            f = min(1.0, remaining / length)
+            path.lineTo(a + (b - a) * f)
+            remaining -= length
+        p.drawPath(path)
 
 
+# ---------------------------------------------------------------------------
 class TaskWorker(QThread):
     result = pyqtSignal(bool, str)
 
@@ -313,38 +304,33 @@ class StepRow(QFrame):
     def __init__(self, index, title, description, task, parent=None):
         super().__init__(parent)
         self.setObjectName("StepRow")
-        self.setAttribute(Qt.WA_Hover, True)
-        self.index = index
         self.title = title
         self.description = description
         self.task = task
         self.worker = None
         self.status = Status.PENDING
 
-        self.badge = QLabel()
-        self.badge.setObjectName("Badge")
-        self.badge.setFixedSize(40, 40)
-        self.badge.setAlignment(Qt.AlignCenter)
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(15, 23, 42, 20))
+        self.setGraphicsEffect(shadow)
+
+        self.indicator = StepIndicator(index)
 
         self.title_lbl = QLabel(title)
         self.title_lbl.setObjectName("StepTitle")
-        self.desc_lbl = QLabel(description)
-        self.desc_lbl.setObjectName("StepDesc")
+        self.status_lbl = QLabel(description)
+        self.status_lbl.setObjectName("StepStatus")
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(3)
+        text_col.setSpacing(2)
         text_col.addWidget(self.title_lbl)
-        text_col.addWidget(self.desc_lbl)
-
-        self.chip = QLabel()
-        self.chip.setObjectName("Chip")
-        self.chip.setAlignment(Qt.AlignCenter)
-        self.chip.setMinimumWidth(84)
-        add_letter_spacing(self.chip, 1.0)
+        text_col.addWidget(self.status_lbl)
 
         self.go_btn = QPushButton("GO")
         self.go_btn.setObjectName("GoButton")
-        self.go_btn.setFixedWidth(96)
+        self.go_btn.setFixedWidth(90)
         self.go_btn.setCursor(Qt.PointingHandCursor)
         self.go_btn.clicked.connect(self.run_task)
 
@@ -355,12 +341,10 @@ class StepRow(QFrame):
         self.skip_btn.clicked.connect(self.skip)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(16)
-        layout.addWidget(self.badge)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(14)
+        layout.addWidget(self.indicator)
         layout.addLayout(text_col, 1)
-        layout.addWidget(self.chip)
-        layout.addSpacing(4)
         layout.addWidget(self.go_btn)
         layout.addWidget(self.skip_btn)
 
@@ -376,7 +360,7 @@ class StepRow(QFrame):
     def run_task(self):
         if self.worker and self.worker.isRunning():
             return
-        self._set_status(Status.RUNNING, "Working on it…")
+        self._set_status(Status.RUNNING, "Running…")
         self.worker = TaskWorker(self.task, self)
         self.worker.result.connect(self._on_result)
         self.worker.start()
@@ -393,26 +377,13 @@ class StepRow(QFrame):
 
     def _set_status(self, status, message):
         self.status = status
-        for w in (self, self.badge, self.desc_lbl, self.chip):
+        for w in (self, self.status_lbl):
             w.setProperty("status", status.value)
             repolish(w)
+        self.status_lbl.setText(message)
+        self.indicator.set_state(status)
 
-        self.desc_lbl.setText(message)
-        self.desc_lbl.setToolTip(message)
-        self.chip.setText(CHIP_TEXT[status])
-        self.badge.setText({
-            Status.PENDING: str(self.index),
-            Status.RUNNING: "•••",
-            Status.PASSED: "✓",
-            Status.SKIPPED: "✓",
-            Status.FAILED: "✕",
-        }[status])
-
-        self.go_btn.setText({
-            Status.RUNNING: "Working",
-            Status.FAILED: "Retry",
-        }.get(status, "GO"))
-
+        self.go_btn.setText("Retry" if status is Status.FAILED else "GO")
         actionable = status in (Status.PENDING, Status.FAILED)
         self.go_btn.setEnabled(actionable)
         self.skip_btn.setEnabled(actionable)
@@ -424,21 +395,14 @@ class MainWindow(QWidget):
         super().__init__()
         self.setObjectName("Root")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setWindowTitle("System Readiness")
-        self.setMinimumWidth(760)
+        self.setWindowTitle("System Readiness Check")
+        self.setMinimumWidth(640)
 
-        # Header
-        eyebrow = QLabel("PRE-FLIGHT CHECKLIST")
-        eyebrow.setObjectName("Eyebrow")
-        add_letter_spacing(eyebrow, 2.0)
-
-        title = QLabel("System Readiness")
+        title = QLabel("System Readiness Check")
         title.setObjectName("HeaderTitle")
-
-        subtitle = QLabel("Run or skip each requirement below to unlock Start.")
+        subtitle = QLabel("Run or skip each requirement below to enable Start.")
         subtitle.setObjectName("HeaderSubtitle")
 
-        # Steps
         self.rows = [
             StepRow(1, "Connect EnPortal",
                     "Establish a session with EnPortal", connect_enportal),
@@ -449,34 +413,26 @@ class MainWindow(QWidget):
         ]
 
         rows_layout = QVBoxLayout()
-        rows_layout.setSpacing(14)
+        rows_layout.setSpacing(12)
         for row in self.rows:
             row.status_changed.connect(self.update_state)
             rows_layout.addWidget(row)
 
-        # Footer
         divider = QFrame()
         divider.setObjectName("Divider")
         divider.setFixedHeight(1)
 
-        progress_title = QLabel("Requirements")
-        progress_title.setObjectName("ProgressLabel")
-        self.progress_count = QLabel()
-        self.progress_count.setObjectName("ProgressCount")
-
-        progress_head = QHBoxLayout()
-        progress_head.addWidget(progress_title)
-        progress_head.addStretch()
-        progress_head.addWidget(self.progress_count)
-
         self.progress = QProgressBar()
         self.progress.setRange(0, len(self.rows))
         self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(8)
+        self.progress.setFixedHeight(6)
+
+        self.progress_lbl = QLabel()
+        self.progress_lbl.setObjectName("ProgressLabel")
 
         progress_col = QVBoxLayout()
-        progress_col.setSpacing(8)
-        progress_col.addLayout(progress_head)
+        progress_col.setSpacing(6)
+        progress_col.addWidget(self.progress_lbl)
         progress_col.addWidget(self.progress)
 
         self.reset_btn = QPushButton("Reset")
@@ -484,36 +440,28 @@ class MainWindow(QWidget):
         self.reset_btn.setCursor(Qt.PointingHandCursor)
         self.reset_btn.clicked.connect(self.reset_all)
 
-        self.start_btn = QPushButton("Start  →")
+        self.start_btn = QPushButton("Start")
         self.start_btn.setObjectName("StartButton")
         self.start_btn.setCursor(Qt.PointingHandCursor)
         self.start_btn.clicked.connect(self.start_process)
 
-        self.start_glow = QGraphicsDropShadowEffect(self.start_btn)
-        self.start_glow.setBlurRadius(36)
-        self.start_glow.setOffset(0, 4)
-        self.start_btn.setGraphicsEffect(self.start_glow)
-
         footer = QHBoxLayout()
         footer.setSpacing(12)
         footer.addLayout(progress_col, 1)
-        footer.addSpacing(28)
+        footer.addSpacing(20)
         footer.addWidget(self.reset_btn)
         footer.addWidget(self.start_btn)
 
-        # Root layout
         root = QVBoxLayout(self)
-        root.setContentsMargins(36, 32, 36, 30)
-        root.setSpacing(4)
-        root.addWidget(eyebrow)
+        root.setContentsMargins(28, 24, 28, 24)
+        root.setSpacing(6)
         root.addWidget(title)
-        root.addSpacing(2)
         root.addWidget(subtitle)
-        root.addSpacing(24)
+        root.addSpacing(16)
         root.addLayout(rows_layout)
-        root.addSpacing(26)
+        root.addSpacing(18)
         root.addWidget(divider)
-        root.addSpacing(20)
+        root.addSpacing(14)
         root.addLayout(footer)
 
         self.update_state()
@@ -522,14 +470,10 @@ class MainWindow(QWidget):
         total = len(self.rows)
         done = sum(r.is_complete() for r in self.rows)
         busy = any(r.is_running() for r in self.rows)
-        ready = done == total
 
         self.progress.setValue(done)
-        self.progress_count.setText(f"{done} / {total}")
-        self.start_btn.setEnabled(ready)
-        self.start_glow.setColor(
-            QColor(192, 80, 240, 170) if ready else QColor(0, 0, 0, 0)
-        )
+        self.progress_lbl.setText(f"{done} of {total} requirements met")
+        self.start_btn.setEnabled(done == total)
         self.reset_btn.setEnabled(
             not busy and any(r.status is not Status.PENDING for r in self.rows)
         )
