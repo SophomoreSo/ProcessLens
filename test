@@ -1,0 +1,357 @@
+import sys
+import time
+from enum import Enum
+
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QPushButton, QFrame, QHBoxLayout,
+    QVBoxLayout, QProgressBar, QMessageBox, QGraphicsDropShadowEffect,
+)
+
+
+# ---------------------------------------------------------------------------
+# Task functions: replace the bodies with your real logic.
+# Each must return (success: bool, message: str) or raise an exception.
+# ---------------------------------------------------------------------------
+def connect_enportal():
+    time.sleep(1.5)
+    return True, "Connected to EnPortal"
+
+
+def connect_gateone():
+    time.sleep(1.5)
+    return True, "Connected to GateOne"
+
+
+def check_db_connection():
+    time.sleep(1.5)
+    return True, "Database connection verified"
+
+
+# ---------------------------------------------------------------------------
+STYLESHEET = """
+QWidget#Root { background: #F4F6FA; }
+QLabel { color: #1F2937; }
+
+QLabel#HeaderTitle { font-size: 20px; font-weight: 600; }
+QLabel#HeaderSubtitle { font-size: 13px; color: #6B7280; }
+
+QFrame#StepRow { background: #FFFFFF; border: 1px solid #E3E7EE; border-radius: 10px; }
+QFrame#StepRow[status="running"] { border: 1px solid #93C5FD; }
+QFrame#StepRow[status="passed"]  { border: 1px solid #86EFAC; }
+QFrame#StepRow[status="skipped"] { border: 1px solid #FCD34D; }
+QFrame#StepRow[status="failed"]  { border: 1px solid #FCA5A5; }
+
+QLabel#StepTitle { font-size: 14px; font-weight: 600; }
+QLabel#StepStatus { font-size: 12px; color: #6B7280; }
+QLabel#StepStatus[status="passed"]  { color: #15803D; }
+QLabel#StepStatus[status="skipped"] { color: #B45309; }
+QLabel#StepStatus[status="failed"]  { color: #DC2626; }
+
+QLabel#Badge {
+    border-radius: 18px; background: #EEF2F7; color: #6B7280;
+    font-size: 15px; font-weight: 700;
+}
+QLabel#Badge[status="running"] { background: #DBEAFE; color: #2563EB; }
+QLabel#Badge[status="passed"]  { background: #16A34A; color: #FFFFFF; }
+QLabel#Badge[status="skipped"] { background: #F59E0B; color: #FFFFFF; }
+QLabel#Badge[status="failed"]  { background: #DC2626; color: #FFFFFF; }
+
+QPushButton {
+    font-size: 13px; font-weight: 600; border-radius: 6px; padding: 8px 16px;
+}
+QPushButton#GoButton { background: #2563EB; color: #FFFFFF; border: none; }
+QPushButton#GoButton:hover { background: #1D4ED8; }
+QPushButton#GoButton:pressed { background: #1E40AF; }
+QPushButton#GoButton:disabled { background: #C7D2FE; color: #EEF2FF; }
+
+QPushButton#SkipButton, QPushButton#ResetButton {
+    background: #FFFFFF; color: #374151; border: 1px solid #D1D5DB;
+}
+QPushButton#SkipButton:hover, QPushButton#ResetButton:hover { background: #F3F4F6; }
+QPushButton#SkipButton:disabled, QPushButton#ResetButton:disabled {
+    color: #9CA3AF; border: 1px solid #E5E7EB;
+}
+
+QPushButton#StartButton {
+    background: #16A34A; color: #FFFFFF; border: none;
+    padding: 10px 32px; font-size: 14px;
+}
+QPushButton#StartButton:hover { background: #15803D; }
+QPushButton#StartButton:pressed { background: #166534; }
+QPushButton#StartButton:disabled { background: #D1D5DB; color: #F9FAFB; }
+
+QProgressBar { background: #E5E7EB; border: none; border-radius: 3px; }
+QProgressBar::chunk { background: #16A34A; border-radius: 3px; }
+
+QLabel#ProgressLabel { font-size: 12px; color: #6B7280; }
+QFrame#Divider { background: #E3E7EE; }
+"""
+
+
+def repolish(widget):
+    """Re-apply the stylesheet after a dynamic property change."""
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
+
+
+class Status(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PASSED = "passed"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class TaskWorker(QThread):
+    result = pyqtSignal(bool, str)
+
+    def __init__(self, func, parent=None):
+        super().__init__(parent)
+        self.func = func
+
+    def run(self):
+        try:
+            ok, msg = self.func()
+        except Exception as exc:
+            ok, msg = False, f"Error: {exc}"
+        self.result.emit(bool(ok), str(msg))
+
+
+class StepRow(QFrame):
+    status_changed = pyqtSignal()
+    SPINNER = "◐◓◑◒"
+
+    def __init__(self, index, title, description, task, parent=None):
+        super().__init__(parent)
+        self.setObjectName("StepRow")
+        self.index = index
+        self.description = description
+        self.task = task
+        self.worker = None
+        self.status = Status.PENDING
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(15, 23, 42, 20))
+        self.setGraphicsEffect(shadow)
+
+        self.badge = QLabel()
+        self.badge.setObjectName("Badge")
+        self.badge.setFixedSize(36, 36)
+        self.badge.setAlignment(Qt.AlignCenter)
+
+        self.title_lbl = QLabel(title)
+        self.title_lbl.setObjectName("StepTitle")
+        self.status_lbl = QLabel(description)
+        self.status_lbl.setObjectName("StepStatus")
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        text_col.addWidget(self.title_lbl)
+        text_col.addWidget(self.status_lbl)
+
+        self.go_btn = QPushButton("GO")
+        self.go_btn.setObjectName("GoButton")
+        self.go_btn.setFixedWidth(90)
+        self.go_btn.setCursor(Qt.PointingHandCursor)
+        self.go_btn.clicked.connect(self.run_task)
+
+        self.skip_btn = QPushButton("Skip")
+        self.skip_btn.setObjectName("SkipButton")
+        self.skip_btn.setFixedWidth(80)
+        self.skip_btn.setCursor(Qt.PointingHandCursor)
+        self.skip_btn.clicked.connect(self.skip)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(14)
+        layout.addWidget(self.badge)
+        layout.addLayout(text_col, 1)
+        layout.addWidget(self.go_btn)
+        layout.addWidget(self.skip_btn)
+
+        self._spin_idx = 0
+        self._spin_timer = QTimer(self)
+        self._spin_timer.setInterval(120)
+        self._spin_timer.timeout.connect(self._tick_spinner)
+
+        self._set_status(Status.PENDING, description)
+
+    # --- public API -------------------------------------------------------
+    def is_complete(self):
+        return self.status in (Status.PASSED, Status.SKIPPED)
+
+    def is_running(self):
+        return self.status is Status.RUNNING
+
+    def run_task(self):
+        if self.worker and self.worker.isRunning():
+            return
+        self._set_status(Status.RUNNING, "Running…")
+        self.worker = TaskWorker(self.task, self)
+        self.worker.result.connect(self._on_result)
+        self.worker.start()
+
+    def skip(self):
+        self._set_status(Status.SKIPPED, "Skipped by user")
+
+    def reset(self):
+        self._set_status(Status.PENDING, self.description)
+
+    # --- internals --------------------------------------------------------
+    def _on_result(self, ok, msg):
+        self._set_status(Status.PASSED if ok else Status.FAILED, msg)
+
+    def _tick_spinner(self):
+        self._spin_idx = (self._spin_idx + 1) % len(self.SPINNER)
+        self.badge.setText(self.SPINNER[self._spin_idx])
+
+    def _set_status(self, status, message):
+        self.status = status
+        for w in (self, self.badge, self.status_lbl):
+            w.setProperty("status", status.value)
+            repolish(w)
+        self.status_lbl.setText(message)
+
+        if status is Status.RUNNING:
+            self._spin_idx = 0
+            self.badge.setText(self.SPINNER[0])
+            self._spin_timer.start()
+        else:
+            self._spin_timer.stop()
+            self.badge.setText({
+                Status.PENDING: str(self.index),
+                Status.PASSED: "✓",
+                Status.SKIPPED: "✓",
+                Status.FAILED: "✕",
+            }[status])
+
+        self.go_btn.setText("Retry" if status is Status.FAILED else "GO")
+        actionable = status in (Status.PENDING, Status.FAILED)
+        self.go_btn.setEnabled(actionable)
+        self.skip_btn.setEnabled(actionable)
+        self.status_changed.emit()
+
+
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("Root")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setWindowTitle("System Readiness Check")
+        self.setMinimumWidth(640)
+
+        title = QLabel("System Readiness Check")
+        title.setObjectName("HeaderTitle")
+        subtitle = QLabel("Run or skip each requirement below to enable Start.")
+        subtitle.setObjectName("HeaderSubtitle")
+
+        self.rows = [
+            StepRow(1, "Connect EnPortal", "Establish a session with EnPortal", connect_enportal),
+            StepRow(2, "Connect GateOne", "Establish a session with GateOne", connect_gateone),
+            StepRow(3, "Check DB connection", "Verify the database is reachable", check_db_connection),
+        ]
+
+        rows_layout = QVBoxLayout()
+        rows_layout.setSpacing(12)
+        for row in self.rows:
+            row.status_changed.connect(self.update_state)
+            rows_layout.addWidget(row)
+
+        divider = QFrame()
+        divider.setObjectName("Divider")
+        divider.setFixedHeight(1)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, len(self.rows))
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+
+        self.progress_lbl = QLabel()
+        self.progress_lbl.setObjectName("ProgressLabel")
+
+        progress_col = QVBoxLayout()
+        progress_col.setSpacing(6)
+        progress_col.addWidget(self.progress_lbl)
+        progress_col.addWidget(self.progress)
+
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setObjectName("ResetButton")
+        self.reset_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_btn.clicked.connect(self.reset_all)
+
+        self.start_btn = QPushButton("Start")
+        self.start_btn.setObjectName("StartButton")
+        self.start_btn.setCursor(Qt.PointingHandCursor)
+        self.start_btn.clicked.connect(self.start_process)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(12)
+        footer.addLayout(progress_col, 1)
+        footer.addSpacing(20)
+        footer.addWidget(self.reset_btn)
+        footer.addWidget(self.start_btn)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(28, 24, 28, 24)
+        root.setSpacing(6)
+        root.addWidget(title)
+        root.addWidget(subtitle)
+        root.addSpacing(16)
+        root.addLayout(rows_layout)
+        root.addSpacing(18)
+        root.addWidget(divider)
+        root.addSpacing(14)
+        root.addLayout(footer)
+
+        self.update_state()
+
+    def update_state(self):
+        total = len(self.rows)
+        done = sum(r.is_complete() for r in self.rows)
+        busy = any(r.is_running() for r in self.rows)
+
+        self.progress.setValue(done)
+        self.progress_lbl.setText(f"{done} of {total} requirements met")
+        self.start_btn.setEnabled(done == total)
+        self.reset_btn.setEnabled(
+            not busy and any(r.status is not Status.PENDING for r in self.rows)
+        )
+
+    def reset_all(self):
+        for row in self.rows:
+            row.reset()
+
+    def start_process(self):
+        # Replace with your real start logic.
+        skipped = [r.title_lbl.text() for r in self.rows if r.status is Status.SKIPPED]
+        msg = "All requirements are met. Starting process…"
+        if skipped:
+            msg += "\n\nSkipped: " + ", ".join(skipped)
+        QMessageBox.information(self, "Start", msg)
+
+    def closeEvent(self, event):
+        for row in self.rows:
+            if row.worker and row.worker.isRunning():
+                row.worker.wait()
+        super().closeEvent(event)
+
+
+def main():
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    app.setStyleSheet(STYLESHEET)
+
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
