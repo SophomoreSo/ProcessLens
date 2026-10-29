@@ -27,6 +27,8 @@ Documentation:
 * **[docs/TASK_MINING.md](docs/TASK_MINING.md)** — task-event import, sessionization, task
   analyses, privacy.
 * **[docs/GUIDED_ANALYSIS.md](docs/GUIDED_ANALYSIS.md)** — questions and answer structure.
+* **[docs/MINER.md](docs/MINER.md)** — ProcessLens Miner, the separate studio for knowledge
+  models, dashboards and queries, and its query language PLQL.
 
 ---
 
@@ -62,6 +64,20 @@ python -m app --guest
 The admin site keeps running on <http://127.0.0.1:8000> (this computer only); the guest site
 listens on port **8080** on all interfaces (`http://<your-computer's-address>:8080`). See
 [Admin and guest sites](#admin-and-guest-sites).
+
+### ProcessLens Miner
+
+A separate studio program for building analyses on the same datasets — packages with a
+knowledge model (KPIs and filters written in the query language PLQL), dashboards with
+click-to-filter components, and a query workbench:
+
+```bash
+python -m miner
+```
+
+Open <http://127.0.0.1:8100>. Miner reads the ProcessLens datasets (same `PROCESSLENS_*`
+settings) without changing them and keeps its own workspace in `data/miner.db`; run it next
+to `python -m app`. See [docs/MINER.md](docs/MINER.md).
 
 With [uv](https://docs.astral.sh/uv/) instead of pip: `uv venv --python 3.11 .venv` then
 `uv pip install -r requirements-dev.txt`.
@@ -197,7 +213,10 @@ sample_data/         synthetic P2P demo log, validation-demo file, OCEL demo, ta
 scripts/             generate_demo_data.py, generate_ocel_demo.py, generate_task_demo.py,
                      benchmark.py, i18n_merge.py
 tests/               pytest suite + hand-checkable fixtures (tests/fixtures/README.md)
-docs/                METRICS.md, MINING.md, OBJECT_CENTRIC.md, TASK_MINING.md, GUIDED_ANALYSIS.md
+miner/               ProcessLens Miner (separate program, `python -m miner`): plql/ (parser, engine),
+                     store (own database), data (read-only ProcessLens access), api, starter content,
+                     templates/ + static/ (single-page studio)
+docs/                METRICS.md, MINING.md, OBJECT_CENTRIC.md, TASK_MINING.md, GUIDED_ANALYSIS.md, MINER.md
 Dockerfile, compose.yaml, requirements*.txt, .env.example, pyproject.toml
 ```
 
@@ -624,6 +643,9 @@ mining worker process) and the XES export; review the license before distributin
   and honest progress.
 * Task mining on exported interaction events, guided question-driven analysis, and a read-only
   guest site.
+* **ProcessLens Miner**, a separate studio program: packages per dataset and lead object type,
+  knowledge model of KPIs and filters in PLQL (a parsed, sandboxed query language), dashboards
+  with eight component types and cross-filtering, query workbench, package export/import.
 
 ## Known limitations
 
@@ -657,5 +679,5 @@ mining worker process) and the XES export; review the license before distributin
   and calibration.
 * **Natural-language analytics** grounded in verified calculations from this API.
 * **What-if simulation** with explicit, documented assumptions.
-* **A safe analytical expression language** for custom KPIs and filters — parsed and
-  evaluated in a sandboxed, whitelisted interpreter; arbitrary Python will never be executed.
+* **PLQL in ProcessLens itself** (custom KPIs and filters on the regular pages); today the
+  language is available in ProcessLens Miner.

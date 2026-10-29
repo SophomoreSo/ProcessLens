@@ -14,6 +14,7 @@ RUN pip install -r requirements.txt
 
 COPY alembic.ini pyproject.toml ./
 COPY app ./app
+COPY miner ./miner
 COPY migrations ./migrations
 COPY sample_data ./sample_data
 COPY scripts ./scripts
