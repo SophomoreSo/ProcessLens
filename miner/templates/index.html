@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>ProcessLens Miner</title>
+  <link rel="icon" href="{{ url_for('static', path='img/miner.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/miner.css') }}">
+  <script src="{{ url_for('vendor', path='cytoscape.min.js') }}"></script>
+  <script src="{{ url_for('vendor', path='dagre.min.js') }}"></script>
+  <script src="{{ url_for('vendor', path='cytoscape-dagre.js') }}"></script>
+  <script src="{{ url_for('vendor', path='plotly-basic.min.js') }}"></script>
+  <script type="module" src="{{ url_for('static', path='js/app.js') }}"></script>
+</head>
+<body data-processlens-url="{{ processlens_url }}" data-version="{{ version }}">
+<header class="appbar">
+  <a class="brand" href="#/" aria-label="ProcessLens Miner — workspace">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="3" width="26" height="26" rx="7" fill="var(--accent)"/>
+      <path d="M9 21l4.5-6 4 3.5L23 11" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="23" cy="11" r="2.2" fill="#fff"/>
+    </svg>
+    <span><b>ProcessLens</b> Miner</span>
+  </a>
+  <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+  <span class="grow"></span>
+  <a class="btn btn-ghost btn-sm" id="open-processlens" href="{{ processlens_url }}" target="_blank" rel="noopener">ProcessLens ↗</a>
+  <button type="button" class="btn btn-ghost btn-sm" id="theme-toggle" aria-label="Switch light or dark theme">◐</button>
+</header>
+<div class="layout">
+  <aside class="navigator hidden" id="navigator" aria-label="Package contents"></aside>
+  <main class="canvas" id="canvas" tabindex="-1"></main>
+</div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div class="tooltip hidden" id="tooltip" role="tooltip"></div>
+<noscript><p class="notice">ProcessLens Miner needs JavaScript.</p></noscript>
+</body>
+</html>
